@@ -29,5 +29,6 @@ site/terraform/*.tfvars.json
 # Generated site output
 site/public/
 
-# Status file
+# Runtime files
 status.json
+bench.log
