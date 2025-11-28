@@ -372,7 +372,7 @@
       '<%= instance_names[3] %>': '#76b7b2'
     };
 
-    const tooltip = d3.select('#tooltip');
+    const tooltipEl = document.getElementById('tooltip');
 
     // Color scale for relative percentages (green = 0%, red = 300%+)
     const colorScale = d3.scaleLinear()
@@ -388,131 +388,199 @@
       } else if (el.textContent.trim() === '') {
         // Leave empty cells unstyled
       } else {
-        el.style.color = '#22863a'; // Green for 0% (fastest)
+        el.style.color = '#22863a';
       }
     });
 
     // Create gradient for legend bar
     const legendBar = document.getElementById('color-legend-bar');
-    const gradientStops = [0, 50, 150, 300].map(v => colorScale(v));
-    legendBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+    legendBar.style.background = `linear-gradient(to right, ${[0, 50, 150, 300].map(v => colorScale(v)).join(', ')})`;
 
-    // Build legend with hover to highlight all instance datapoints
-    const legend = d3.select('#legend');
-    const mobileLegend = d3.select('#mobile-legend');
+    // Lookup maps (populated during render)
+    const svgMap = {};      // svgMap[benchmark] = SVG element
+    const dotMap = {};      // dotMap[benchmark][instance] = array of circle elements
+    const tableMap = {};    // tableMap[benchmark][instance] = array of td elements
+    let summaryLines = [];  // all summary line elements
+    let allDots = [];       // flat array of all dots for legend highlight
 
-    function highlightInstance(inst) {
-      d3.selectAll('.summary-line')
-        .attr('opacity', d => d.instance === inst ? 1 : 0.05)
-        .attr('stroke-width', d => d.instance === inst ? 2 : 1);
-      d3.selectAll('.benchmark-cell .dot')
-        .classed('dimmed', d => d.instance !== inst)
-        .classed('highlighted', d => d.instance === inst);
-    }
-
-    function clearInstanceHighlight() {
-      d3.selectAll('.summary-line')
-        .attr('opacity', 0.3)
-        .attr('stroke-width', 1);
-      d3.selectAll('.benchmark-cell .dot')
-        .classed('dimmed', false)
-        .classed('highlighted', false);
-    }
-
-    instances.forEach(inst => {
-      legend.append('span')
-        .style('cursor', 'pointer')
-        .html(`<span class="swatch" style="background:${colors[inst]}"></span>${inst}`)
-        .on('mouseenter', () => highlightInstance(inst))
-        .on('mouseleave', clearInstanceHighlight);
-      mobileLegend.append('span')
-        .style('cursor', 'pointer')
-        .html(`<span class="swatch" style="background:${colors[inst]}"></span>${inst}`)
-        .on('mouseenter', () => highlightInstance(inst))
-        .on('mouseleave', clearInstanceHighlight);
+    // Build tableMap from existing DOM
+    benchmarks.forEach(b => { tableMap[b] = {}; instances.forEach(i => { tableMap[b][i] = []; }); });
+    tableMap['all'] = {}; instances.forEach(i => { tableMap['all'][i] = []; });
+    document.querySelectorAll('td.instance-cell').forEach(cell => {
+      const { benchmark, instance } = cell.dataset;
+      if (tableMap[benchmark]?.[instance]) tableMap[benchmark][instance].push(cell);
     });
-
-    function highlightTableCells(benchmark, instance) {
-      document.querySelectorAll(
-        `td.instance-cell[data-benchmark="${benchmark}"][data-instance="${instance}"]`
-      ).forEach(cell => cell.classList.add('table-highlight'));
-    }
-
-    function clearTableHighlight() {
-      document.querySelectorAll('.table-highlight').forEach(el => el.classList.remove('table-highlight'));
-    }
 
     // Beeswarm parameters
     const cellWidth = 150;
     const cellHeight = 62;
     const cellPadding = 5;
 
-    // Create placeholder SVGs for each benchmark (so layout is stable)
+    // Create placeholder SVGs and populate svgMap
     const container = d3.select('#beeswarm-matrix');
     benchmarks.forEach(benchmark => {
-      container.append('svg')
+      const svg = container.append('svg')
         .attr('class', 'benchmark-cell')
         .attr('data-benchmark', benchmark)
         .attr('data-loaded', 'false')
         .attr('width', cellWidth)
         .attr('height', cellHeight)
         .attr('viewBox', `0 0 ${cellWidth} ${cellHeight}`)
-        .attr('preserveAspectRatio', 'xMidYMid meet')
-        .append('text')
+        .attr('preserveAspectRatio', 'xMidYMid meet');
+      svg.append('text')
         .attr('class', 'benchmark-label')
         .attr('x', cellWidth / 2)
         .attr('y', 11)
         .text(benchmark.length > 22 ? benchmark.slice(0, 20) + '…' : benchmark);
+      svgMap[benchmark] = svg.node();
+      dotMap[benchmark] = {};
+      instances.forEach(i => { dotMap[benchmark][i] = []; });
     });
 
-    // Table filter (works without data)
+    // Highlight helpers using cached maps
+    let currentHighlight = null;
+
+    function highlightBeeswarm(benchmark, instance) {
+      const svg = svgMap[benchmark];
+      if (!svg) return;
+      svg.classList.add('svg-highlight');
+      if (instance) {
+        instances.forEach(inst => {
+          const dots = dotMap[benchmark][inst];
+          const isTarget = inst === instance;
+          dots.forEach(dot => {
+            dot.classList.toggle('dimmed', !isTarget);
+            dot.classList.toggle('highlighted', isTarget);
+          });
+        });
+      } else {
+        Object.values(dotMap[benchmark]).flat().forEach(dot => dot.classList.add('highlighted'));
+      }
+    }
+
+    function highlightTableCells(benchmark, instance) {
+      const cells = tableMap[benchmark]?.[instance];
+      if (cells) cells.forEach(c => c.classList.add('table-highlight'));
+    }
+
+    function clearHighlights() {
+      if (!currentHighlight) return;
+      const { benchmark, instance } = currentHighlight;
+      const svg = svgMap[benchmark];
+      if (svg) {
+        svg.classList.remove('svg-highlight');
+        Object.values(dotMap[benchmark]).flat().forEach(dot => {
+          dot.classList.remove('dimmed', 'highlighted');
+        });
+      }
+      if (instance) {
+        const cells = tableMap[benchmark]?.[instance];
+        if (cells) cells.forEach(c => c.classList.remove('table-highlight'));
+      }
+      currentHighlight = null;
+      tooltipEl.style.display = 'none';
+    }
+
+    // Legend highlight (all instances across all benchmarks)
+    function highlightInstance(inst) {
+      summaryLines.forEach(line => {
+        const d = d3.select(line).datum();
+        line.setAttribute('opacity', d.instance === inst ? 1 : 0.05);
+        line.setAttribute('stroke-width', d.instance === inst ? 2 : 1);
+      });
+      allDots.forEach(dot => {
+        const isTarget = dot.dataset.instance === inst;
+        dot.classList.toggle('dimmed', !isTarget);
+        dot.classList.toggle('highlighted', isTarget);
+      });
+    }
+
+    function clearInstanceHighlight() {
+      summaryLines.forEach(line => {
+        line.setAttribute('opacity', 0.3);
+        line.setAttribute('stroke-width', 1);
+      });
+      allDots.forEach(dot => {
+        dot.classList.remove('dimmed', 'highlighted');
+      });
+    }
+
+    // Build legend
+    const legend = d3.select('#legend');
+    const mobileLegend = d3.select('#mobile-legend');
+    instances.forEach(inst => {
+      [legend, mobileLegend].forEach(leg => {
+        leg.append('span')
+          .style('cursor', 'pointer')
+          .html(`<span class="swatch" style="background:${colors[inst]}"></span>${inst}`)
+          .on('pointerenter', () => highlightInstance(inst))
+          .on('pointerleave', clearInstanceHighlight);
+      });
+    });
+
+    // Table filter
     const filterInput = document.getElementById('filter');
     const tableRows = document.querySelectorAll('#results-table tbody tr');
+    const beeswarmCells = Object.values(svgMap);
     filterInput.addEventListener('input', function() {
       const filter = this.value.toLowerCase();
       tableRows.forEach(row => {
         row.style.display = row.dataset.name.includes(filter) ? '' : 'none';
       });
-      document.querySelectorAll('.benchmark-cell').forEach(cell => {
+      beeswarmCells.forEach(cell => {
         cell.style.display = cell.dataset.benchmark.toLowerCase().includes(filter) ? '' : 'none';
       });
     });
 
-    // Table hover interactions (work without dots being rendered)
-    document.querySelectorAll('.benchmark-name').forEach(cell => {
-      cell.addEventListener('mouseenter', function() {
-        const benchmark = this.closest('tr').dataset.benchmark;
+    // Event delegation for table
+    const resultsTable = document.getElementById('results-table');
+    resultsTable.addEventListener('pointerover', e => {
+      const cell = e.target.closest('.instance-cell');
+      const nameCell = e.target.closest('.benchmark-name');
+      if (cell) {
+        const { benchmark, instance } = cell.dataset;
         if (benchmark === 'all') return;
-        const svgCell = document.querySelector(`.benchmark-cell[data-benchmark="${benchmark}"]`);
-        if (svgCell) {
-          svgCell.classList.add('svg-highlight');
-          d3.select(svgCell).selectAll('.dot').classed('highlighted', true);
-        }
-      });
-      cell.addEventListener('mouseleave', function() {
-        d3.selectAll('.benchmark-cell').classed('svg-highlight', false);
-        d3.selectAll('.dot').classed('dimmed', false).classed('highlighted', false);
-      });
+        clearHighlights();
+        currentHighlight = { benchmark, instance };
+        highlightTableCells(benchmark, instance);
+        highlightBeeswarm(benchmark, instance);
+      } else if (nameCell) {
+        const benchmark = nameCell.closest('tr').dataset.benchmark;
+        if (benchmark === 'all') return;
+        clearHighlights();
+        currentHighlight = { benchmark, instance: null };
+        highlightBeeswarm(benchmark, null);
+      }
+    });
+    resultsTable.addEventListener('pointerout', e => {
+      const related = e.relatedTarget;
+      if (!related || !resultsTable.contains(related)) {
+        clearHighlights();
+      }
     });
 
-    document.querySelectorAll('.instance-cell').forEach(cell => {
-      cell.addEventListener('mouseenter', function() {
-        const { benchmark, instance } = this.dataset;
-        if (benchmark === 'all') return;
-        highlightTableCells(benchmark, instance);
-        const svgCell = document.querySelector(`.benchmark-cell[data-benchmark="${benchmark}"]`);
-        if (svgCell) {
-          svgCell.classList.add('svg-highlight');
-          d3.select(svgCell).selectAll('.dot')
-            .classed('dimmed', dot => dot.instance !== instance)
-            .classed('highlighted', dot => dot.instance === instance);
-        }
-      });
-      cell.addEventListener('mouseleave', function() {
-        clearTableHighlight();
-        d3.selectAll('.benchmark-cell').classed('svg-highlight', false);
-        d3.selectAll('.dot').classed('dimmed', false).classed('highlighted', false);
-      });
+    // Event delegation for beeswarm matrix
+    const beeswarmMatrix = document.getElementById('beeswarm-matrix');
+    beeswarmMatrix.addEventListener('pointerover', e => {
+      const dot = e.target.closest('.dot');
+      if (!dot) return;
+      const benchmark = dot.dataset.benchmark;
+      const instance = dot.dataset.instance;
+      const d = d3.select(dot).datum();
+      clearHighlights();
+      currentHighlight = { benchmark, instance };
+      highlightBeeswarm(benchmark, instance);
+      highlightTableCells(benchmark, instance);
+      tooltipEl.style.display = 'block';
+      tooltipEl.style.left = (e.pageX + 10) + 'px';
+      tooltipEl.style.top = (e.pageY - 10) + 'px';
+      tooltipEl.innerHTML = `${instance}: ${d.time}ms`;
+    });
+    beeswarmMatrix.addEventListener('pointerout', e => {
+      const related = e.relatedTarget;
+      if (!related || !beeswarmMatrix.contains(related)) {
+        clearHighlights();
+      }
     });
 
     // Fetch data and render charts
@@ -554,10 +622,10 @@
         positions.push({x: px, y: d.py});
       });
 
-      const axisG = svg.append('g')
+      svg.append('g')
         .attr('class', 'axis')
-        .attr('transform', `translate(0,${cellHeight - 12})`);
-      axisG.selectAll('text')
+        .attr('transform', `translate(0,${cellHeight - 12})`)
+        .selectAll('text')
         .data(x.ticks(3))
         .enter().append('text')
         .attr('x', d => x(d))
@@ -575,22 +643,9 @@
         .attr('cy', d => d.py)
         .attr('r', radius)
         .attr('fill', d => colors[d.instance])
-        .on('mouseenter', function(event, d) {
-          d3.select(this.parentNode).selectAll('.dot')
-            .classed('dimmed', dot => dot.instance !== d.instance)
-            .classed('highlighted', dot => dot.instance === d.instance);
-          highlightTableCells(d.benchmark, d.instance);
-          tooltip.style('display', 'block')
-            .style('left', (event.pageX + 10) + 'px')
-            .style('top', (event.pageY - 10) + 'px')
-            .html(`${d.instance}: ${d.time}ms`);
-        })
-        .on('mouseleave', function() {
-          d3.select(this.parentNode).selectAll('.dot')
-            .classed('dimmed', false)
-            .classed('highlighted', false);
-          clearTableHighlight();
-          tooltip.style('display', 'none');
+        .each(function(d) {
+          dotMap[benchmark][d.instance].push(this);
+          allDots.push(this);
         });
     }
 
@@ -648,16 +703,19 @@
         .attr('stroke', d => colors[d.instance])
         .attr('stroke-width', 1)
         .attr('opacity', 0.3)
-        .on('mouseenter', function(event, d) {
-          d3.select(this).attr('opacity', 1).attr('stroke-width', 2);
-          tooltip.style('display', 'block')
-            .style('left', (event.pageX + 10) + 'px')
-            .style('top', (event.pageY - 10) + 'px')
-            .html(`${d.instance}: ${d.avgTime}ms (+${d.relativePercent.toFixed(1)}%)<br><em>${d.benchmark}</em>`);
+        .each(function() { summaryLines.push(this); })
+        .on('pointerenter', function(event, d) {
+          this.setAttribute('opacity', 1);
+          this.setAttribute('stroke-width', 2);
+          tooltipEl.style.display = 'block';
+          tooltipEl.style.left = (event.pageX + 10) + 'px';
+          tooltipEl.style.top = (event.pageY - 10) + 'px';
+          tooltipEl.innerHTML = `${d.instance}: ${d.avgTime}ms (+${d.relativePercent.toFixed(1)}%)<br><em>${d.benchmark}</em>`;
         })
-        .on('mouseleave', function() {
-          d3.select(this).attr('opacity', 0.3).attr('stroke-width', 1);
-          tooltip.style('display', 'none');
+        .on('pointerleave', function() {
+          this.setAttribute('opacity', 0.3);
+          this.setAttribute('stroke-width', 1);
+          tooltipEl.style.display = 'none';
         });
     }
 
@@ -670,18 +728,16 @@
 
         renderSummaryChart();
 
-        // Lazy-load beeswarms with IntersectionObserver
         const observer = new IntersectionObserver((entries) => {
           entries.forEach(entry => {
             if (entry.isIntersecting) {
-              const svg = d3.select(entry.target);
-              renderBeeswarm(svg, entry.target.dataset.benchmark);
+              renderBeeswarm(d3.select(entry.target), entry.target.dataset.benchmark);
               observer.unobserve(entry.target);
             }
           });
         }, { rootMargin: '100px' });
 
-        document.querySelectorAll('.benchmark-cell').forEach(cell => observer.observe(cell));
+        Object.values(svgMap).forEach(cell => observer.observe(cell));
       });
   </script>
 </body>
