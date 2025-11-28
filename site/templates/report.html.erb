@@ -89,12 +89,17 @@
     }
     .dot {
       stroke: none;
-      opacity: 0.7;
+      opacity: 0;
       cursor: pointer;
+      transition: opacity 100ms ease-out;
     }
+    .benchmark-cell.rendered .dot { opacity: 0.7; }
     .dot.dimmed { opacity: 0.1; }
     .dot.highlighted { opacity: 1; stroke: #333; stroke-width: 0.5px; }
     .axis text { font-size: 7px; fill: #999; }
+    .benchmark-cell .axis { opacity: 0; transition: opacity 100ms ease-out; }
+    .benchmark-cell.rendered .axis { opacity: 1; }
+    .summary-line { transition: opacity 100ms ease-out; }
 
     .instance-legend {
       display: flex;
@@ -107,6 +112,7 @@
       display: flex;
       align-items: center;
       gap: 3px;
+      cursor: pointer;
     }
     .instance-legend .swatch {
       width: 8px;
@@ -244,7 +250,10 @@
     .summary-beeswarm svg {
       width: 100%;
       display: block;
+      opacity: 0;
+      transition: opacity 100ms ease-out;
     }
+    .summary-beeswarm svg.rendered { opacity: 1; }
     .mobile-legend {
       display: none;
       gap: 12px;
@@ -256,6 +265,7 @@
       display: flex;
       align-items: center;
       gap: 3px;
+      cursor: pointer;
     }
     .mobile-legend .swatch {
       width: 8px;
@@ -277,7 +287,11 @@
     <p>All benchmarks are run with YJIT enabled on Ruby <%= ruby_version %>. View the code for this page <a href="https://github.com/speedshop/rubybencher">here.</a></p>
   </div>
 
-  <div class="mobile-legend" id="mobile-legend"></div>
+  <div class="mobile-legend" id="mobile-legend">
+    <% instance_names.each do |inst| %>
+    <span data-instance="<%= inst %>"><span class="swatch"></span><%= inst %></span>
+    <% end %>
+  </div>
   <div class="summary-beeswarm" id="summary-beeswarm"></div>
 
   <div class="main-layout">
@@ -354,7 +368,11 @@
     </div>
 
     <div class="right-column">
-      <div class="instance-legend" id="legend"></div>
+      <div class="instance-legend" id="legend">
+        <% instance_names.each do |inst| %>
+        <span data-instance="<%= inst %>"><span class="swatch"></span><%= inst %></span>
+        <% end %>
+      </div>
       <div id="beeswarm-matrix"></div>
     </div>
   </div>
@@ -505,17 +523,12 @@
       });
     }
 
-    // Build legend
-    const legend = d3.select('#legend');
-    const mobileLegend = d3.select('#mobile-legend');
-    instances.forEach(inst => {
-      [legend, mobileLegend].forEach(leg => {
-        leg.append('span')
-          .style('cursor', 'pointer')
-          .html(`<span class="swatch" style="background:${colors[inst]}"></span>${inst}`)
-          .on('pointerenter', () => highlightInstance(inst))
-          .on('pointerleave', clearInstanceHighlight);
-      });
+    // Color legend swatches and add event listeners
+    document.querySelectorAll('#legend [data-instance], #mobile-legend [data-instance]').forEach(span => {
+      const inst = span.dataset.instance;
+      span.querySelector('.swatch').style.background = colors[inst];
+      span.addEventListener('pointerenter', () => highlightInstance(inst));
+      span.addEventListener('pointerleave', clearInstanceHighlight);
     });
 
     // Table filter
@@ -647,6 +660,9 @@
           dotMap[benchmark][d.instance].push(this);
           allDots.push(this);
         });
+
+      // Trigger fade-in (double rAF ensures initial paint completes first)
+      requestAnimationFrame(() => requestAnimationFrame(() => svg.node().classList.add('rendered')));
     }
 
     function renderSummaryChart() {
@@ -717,6 +733,9 @@
           this.setAttribute('stroke-width', 1);
           tooltipEl.style.display = 'none';
         });
+
+      // Trigger fade-in (double rAF ensures initial paint completes first)
+      requestAnimationFrame(() => requestAnimationFrame(() => svg.node().classList.add('rendered')));
     }
 
     // Fetch data, render summary immediately, lazy-load beeswarms
