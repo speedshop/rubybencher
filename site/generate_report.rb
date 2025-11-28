@@ -73,8 +73,12 @@ def generate_html(data)
   instance_names = data.keys.sort
   ruby_version = data.values.first[:ruby_version]
 
-  # Build iteration data for D3 (sample to max 45 per instance per benchmark to represent multiple runs)
-  max_samples = 45
+  # Build iteration data for D3, sampled to ~1MB target
+  # Each data point is ~70 bytes in JSON, so target ~14,000 points
+  target_points = 14_000
+  total_iterations = data.values.sum { |d| d[:benchmarks].values.sum { |b| b[:iterations].size } }
+  sample_rate = [1.0, target_points.to_f / total_iterations].min
+
   iteration_data = []
   all_benchmarks.each do |benchmark|
     instance_names.each do |instance|
@@ -82,15 +86,12 @@ def generate_html(data)
       next unless bench_data
 
       iters = bench_data[:iterations]
-      # Sample evenly if too many iterations
-      sampled = if iters.size > max_samples
-        step = iters.size.to_f / max_samples
-        max_samples.times.map { |i| iters[(i * step).to_i] }
-      else
-        iters
-      end
+      # Sample evenly across iterations
+      sample_count = (iters.size * sample_rate).ceil.clamp(1, iters.size)
+      step = iters.size.to_f / sample_count
+      sampled = sample_count.times.map { |i| iters[(i * step).to_i] }
 
-      sampled.each_with_index do |time, idx|
+      sampled.each do |time|
         iteration_data << {
           benchmark: benchmark,
           instance: instance,
@@ -230,18 +231,44 @@ if run_dirs.any?
   end
 else
   # Old format: results/{run_id}/{instance-type}/output.txt
+  # Instance names may have replica suffixes (e.g., c6g-medium-1, c6g-medium-2)
+  # Combine replicas into a single instance type
   instance_dirs = Dir.glob(File.join(RESULTS_DIR, '*')).select { |f| File.directory?(f) }
 
   instance_dirs.each do |dir|
-    instance_name = File.basename(dir)
+    raw_instance_name = File.basename(dir)
     output_file = File.join(dir, 'output.txt')
     next unless File.exist?(output_file)
 
-    puts "  Parsing #{instance_name}..."
-    data[instance_name] = parse_benchmark_file(output_file)
+    # Strip replica suffix (e.g., "c6g-medium-1" -> "c6g-medium")
+    instance_name = raw_instance_name.sub(/-\d+$/, '')
 
-    total_iters = data[instance_name][:benchmarks].values.sum { |b| b[:iterations].size }
-    puts "    Found #{data[instance_name][:benchmarks].size} benchmarks, #{total_iters} iterations"
+    puts "  Parsing #{raw_instance_name} -> #{instance_name}..."
+    run_data = parse_benchmark_file(output_file)
+
+    if data[instance_name]
+      # Merge benchmarks from this replica into existing data
+      run_data[:benchmarks].each do |bench_name, bench_data|
+        if data[instance_name][:benchmarks][bench_name]
+          # Append iterations from this replica
+          data[instance_name][:benchmarks][bench_name][:iterations].concat(bench_data[:iterations])
+        else
+          data[instance_name][:benchmarks][bench_name] = bench_data
+        end
+      end
+    else
+      data[instance_name] = run_data
+    end
+  end
+
+  # Recalculate averages after merging all replicas
+  data.each do |instance_name, instance_data|
+    instance_data[:benchmarks].each do |bench_name, bench_data|
+      iters = bench_data[:iterations]
+      bench_data[:average] = (iters.sum.to_f / iters.size).round
+    end
+    total_iters = instance_data[:benchmarks].values.sum { |b| b[:iterations].size }
+    puts "  #{instance_name}: #{instance_data[:benchmarks].size} benchmarks, #{total_iters} total iterations"
   end
 end
 

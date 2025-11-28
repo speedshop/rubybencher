@@ -7,17 +7,19 @@
   <script src="/js/d3.v7.min.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
+    html {
       overflow-x: hidden;
-      max-width: 100%;
     }
     body {
+      overflow-x: hidden;
       font-family: 'Iowan Old Style', 'Palatino Linotype', 'URW Palladio L', P052, serif;
       font-weight: normal;
       font-size: 12px;
       line-height: 1.4;
       color: #333;
       padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
     }
     h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
     h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px 0; color: #555; }
@@ -38,6 +40,7 @@
       display: flex;
       gap: 24px;
       align-items: flex-start;
+      max-width: 100%;
     }
     .left-column {
       width: 570px;
@@ -52,6 +55,7 @@
       flex: 1;
       min-width: 0;
       max-width: 100%;
+      overflow: hidden;
     }
 
     @media (max-width: 999px) {
@@ -93,7 +97,7 @@
       cursor: pointer;
       transition: opacity 100ms ease-out;
     }
-    .benchmark-cell.rendered .dot { opacity: 0.7; }
+    .benchmark-cell.rendered .dot { opacity: 1; }
     .dot.dimmed { opacity: 0.1; }
     .dot.highlighted { opacity: 1; stroke: #333; stroke-width: 0.5px; }
     .axis text { font-size: 7px; fill: #999; }
@@ -245,10 +249,11 @@
       max-width: 100%;
       height: 62px;
       margin-bottom: 16px;
-      overflow-x: auto;
+      overflow: hidden;
     }
     .summary-beeswarm svg {
       width: 100%;
+      max-width: 100%;
       display: block;
       opacity: 0;
       transition: opacity 100ms ease-out;
@@ -283,7 +288,7 @@
   <div class="left-column">
     <h1>The Great Cross-Cloud Ruby Benchmark</h1>
     <p class="subtitle">Comparing iteration times across <%= instance_names.size %> machine types on several public clouds. Each dot is one non-warmup iteration.</p>
-    <p>This site was borne of my continuous frustration at <a href="https://speedshop.co">Speedshop</a> of clients running on old generation AWS instances, when I knew "free speed" was on the table. This page simply runs <a href="https://github.com/ruby/ruby-bench">ruby-bench</a>, a series of <i>mostly</i> CPU-bound benchmarks maintained by Ruby core and the YJIT developers.</p>
+    <p>This site was borne of my continuous frustration at <a href="https://speedshop.co">Speedshop</a> of clients running on old generation AWS instances, when I knew "free speed" was on the table. This page simply runs <a href="https://github.com/ruby/ruby-bench">ruby-bench</a>, a series of <i>mostly</i> CPU-bound benchmarks maintained by Ruby core and the YJIT developers. We run across multiple instances to reduce the effect of noisy neighbors.</p>
     <p>All benchmarks are run with YJIT enabled on Ruby <%= ruby_version %>. View the code for this page <a href="https://github.com/speedshop/rubybencher">here.</a></p>
   </div>
 
@@ -494,9 +499,24 @@
       if (instance) {
         const cells = tableMap[benchmark]?.[instance];
         if (cells) cells.forEach(c => c.classList.remove('table-highlight'));
+        clearLegendHighlight();
       }
       currentHighlight = null;
       tooltipEl.style.display = 'none';
+    }
+
+    function highlightLegendItem(inst) {
+      document.querySelectorAll('#legend [data-instance], #mobile-legend [data-instance]').forEach(span => {
+        span.style.opacity = span.dataset.instance === inst ? '1' : '0.3';
+        span.style.fontWeight = span.dataset.instance === inst ? '600' : 'normal';
+      });
+    }
+
+    function clearLegendHighlight() {
+      document.querySelectorAll('#legend [data-instance], #mobile-legend [data-instance]').forEach(span => {
+        span.style.opacity = '1';
+        span.style.fontWeight = 'normal';
+      });
     }
 
     // Legend highlight (all instances across all benchmarks)
@@ -515,7 +535,7 @@
 
     function clearInstanceHighlight() {
       summaryLines.forEach(line => {
-        line.setAttribute('opacity', 0.3);
+        line.setAttribute('opacity', 1);
         line.setAttribute('stroke-width', 1);
       });
       allDots.forEach(dot => {
@@ -552,7 +572,10 @@
       const nameCell = e.target.closest('.benchmark-name');
       if (cell) {
         const { benchmark, instance } = cell.dataset;
-        if (benchmark === 'all') return;
+        if (benchmark === 'all') {
+          highlightInstance(instance);
+          return;
+        }
         clearHighlights();
         currentHighlight = { benchmark, instance };
         highlightTableCells(benchmark, instance);
@@ -569,6 +592,7 @@
       const related = e.relatedTarget;
       if (!related || !resultsTable.contains(related)) {
         clearHighlights();
+        clearInstanceHighlight();
       }
     });
 
@@ -579,15 +603,11 @@
       if (!dot) return;
       const benchmark = dot.dataset.benchmark;
       const instance = dot.dataset.instance;
-      const d = d3.select(dot).datum();
       clearHighlights();
       currentHighlight = { benchmark, instance };
       highlightBeeswarm(benchmark, instance);
       highlightTableCells(benchmark, instance);
-      tooltipEl.style.display = 'block';
-      tooltipEl.style.left = (e.pageX + 10) + 'px';
-      tooltipEl.style.top = (e.pageY - 10) + 'px';
-      tooltipEl.innerHTML = `${instance}: ${d.time}ms`;
+      highlightLegendItem(instance);
     });
     beeswarmMatrix.addEventListener('pointerout', e => {
       const related = e.relatedTarget;
@@ -614,25 +634,13 @@
         .domain([xExtent[0], xExtent[1] + xPadding])
         .range([cellPadding + 3, cellWidth - cellPadding]);
 
-      const radius = 3;
-      const centerY = cellHeight / 2 + 3;
+      const radius = 1;
+      const minY = 14, maxY = cellHeight - 14;
 
-      const sorted = [...benchData].sort((a, b) => a.time - b.time);
-      const positions = [];
-      sorted.forEach(d => {
-        const px = x(d.time);
-        let py = centerY;
-        let dir = 1;
-        let offset = 0;
-        while (positions.some(p => Math.abs(p.x - px) < radius * 2 && Math.abs(p.y - py) < radius * 2)) {
-          offset += radius * 2;
-          py = centerY + offset * dir;
-          dir *= -1;
-          if (offset > 25) break;
-        }
-        d.px = px;
-        d.py = Math.max(16, Math.min(cellHeight - 16, py));
-        positions.push({x: px, y: d.py});
+      // Simple scatterplot: x from time, y random within bounds
+      benchData.forEach(d => {
+        d.px = x(d.time);
+        d.py = minY + Math.random() * (maxY - minY);
       });
 
       svg.append('g')
@@ -688,7 +696,11 @@
         });
       });
 
-      const maxRelative = d3.max(avgData, d => d.relativePercent);
+      // Use 95th percentile for x-axis to exclude outliers
+      const sortedRelatives = avgData.map(d => d.relativePercent).sort((a, b) => a - b);
+      const p95Index = Math.floor(sortedRelatives.length * 0.95);
+      const maxRelative = sortedRelatives[p95Index] || 100;
+
       const svg = summaryContainer.append('svg')
         .attr('width', summaryWidth)
         .attr('height', summaryHeight)
@@ -718,10 +730,9 @@
         .attr('y2', summaryHeight - 12)
         .attr('stroke', d => colors[d.instance])
         .attr('stroke-width', 1)
-        .attr('opacity', 0.3)
+        .attr('opacity', 1)
         .each(function() { summaryLines.push(this); })
         .on('pointerenter', function(event, d) {
-          this.setAttribute('opacity', 1);
           this.setAttribute('stroke-width', 2);
           tooltipEl.style.display = 'block';
           tooltipEl.style.left = (event.pageX + 10) + 'px';
@@ -729,7 +740,6 @@
           tooltipEl.innerHTML = `${d.instance}: ${d.avgTime}ms (+${d.relativePercent.toFixed(1)}%)<br><em>${d.benchmark}</em>`;
         })
         .on('pointerleave', function() {
-          this.setAttribute('opacity', 0.3);
           this.setAttribute('stroke-width', 1);
           tooltipEl.style.display = 'none';
         });
