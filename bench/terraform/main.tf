@@ -27,7 +27,7 @@ resource "tls_private_key" "bench" {
 }
 
 resource "aws_key_pair" "bench" {
-  key_name   = "ruby-bench-${var.run_id}"
+  key_name   = "ruby-bench"
   public_key = tls_private_key.bench.public_key_openssh
 }
 
@@ -44,7 +44,7 @@ resource "aws_vpc" "bench" {
   enable_dns_support   = true
 
   tags = {
-    Name = "ruby-bench-vpc-${var.run_id}"
+    Name = "ruby-bench-vpc"
   }
 }
 
@@ -53,7 +53,7 @@ resource "aws_internet_gateway" "bench" {
   vpc_id = aws_vpc.bench.id
 
   tags = {
-    Name = "ruby-bench-igw-${var.run_id}"
+    Name = "ruby-bench-igw"
   }
 }
 
@@ -65,7 +65,7 @@ resource "aws_subnet" "bench" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "ruby-bench-subnet-${var.run_id}"
+    Name = "ruby-bench-subnet"
   }
 }
 
@@ -79,7 +79,7 @@ resource "aws_route_table" "bench" {
   }
 
   tags = {
-    Name = "ruby-bench-rt-${var.run_id}"
+    Name = "ruby-bench-rt"
   }
 }
 
@@ -90,7 +90,7 @@ resource "aws_route_table_association" "bench" {
 
 # Security Group
 resource "aws_security_group" "bench" {
-  name        = "ruby-bench-sg-${var.run_id}"
+  name        = "ruby-bench-sg"
   description = "Security group for Ruby benchmarking"
   vpc_id      = aws_vpc.bench.id
 
@@ -109,7 +109,7 @@ resource "aws_security_group" "bench" {
   }
 
   tags = {
-    Name = "ruby-bench-sg-${var.run_id}"
+    Name = "ruby-bench-sg"
   }
 }
 
@@ -149,10 +149,18 @@ locals {
   user_data = <<-EOF
     #!/bin/bash
     set -e
-    dnf install -y docker git
-    systemctl enable docker
-    systemctl start docker
+
+    # Failsafe: terminate instance after 1 hour no matter what
+    echo "sudo shutdown -h now" | at now + 60 minutes
+
+    dnf install -y docker git at
+    systemctl enable docker atd
+    systemctl start docker atd
     usermod -aG docker ec2-user
+
+    # Re-schedule shutdown after at daemon is running (in case first one failed)
+    echo "sudo shutdown -h now" | at now + 60 minutes
+
     # Signal that setup is complete
     touch /home/ec2-user/.setup_complete
   EOF
@@ -195,12 +203,15 @@ resource "aws_instance" "bench" {
   vpc_security_group_ids = [aws_security_group.bench.id]
   user_data              = local.user_data
 
+  # When instance shuts itself down, terminate it (don't just stop)
+  instance_initiated_shutdown_behavior = "terminate"
+
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
   }
 
   tags = {
-    Name = "ruby-bench-${each.key}-${var.run_id}"
+    Name = "ruby-bench-${each.key}"
   }
 }

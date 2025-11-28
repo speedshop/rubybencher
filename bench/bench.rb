@@ -21,6 +21,7 @@ class BenchmarkOrchestrator
     @results_path = File.join(RESULTS_DIR, @run_id)
     @failed_runs = []
     @successful_runs = []
+    @status_mutex = Mutex.new
   end
 
   def run
@@ -89,8 +90,12 @@ class BenchmarkOrchestrator
   private
 
   def update_status(data)
-    status = data.merge(updated_at: Time.now.iso8601)
-    File.write(STATUS_FILE, JSON.pretty_generate(status))
+    @status_mutex.synchronize do
+      status = data.merge(updated_at: Time.now.iso8601)
+      tmp_file = "#{STATUS_FILE}.tmp"
+      File.write(tmp_file, JSON.pretty_generate(status))
+      File.rename(tmp_file, STATUS_FILE)
+    end
   end
 
   def setup_results_directory
@@ -100,8 +105,8 @@ class BenchmarkOrchestrator
   def terraform_apply
     update_status(phase: "terraform_apply", current_run: @current_run, total_runs: NUM_RUNS)
     Dir.chdir(TERRAFORM_DIR) do
-      system("terraform init -input=false > /dev/null 2>&1") || abort("terraform init failed")
-      system("terraform apply -auto-approve -var=\"run_id=#{@run_id}\" > /dev/null 2>&1") || abort("terraform apply failed")
+      system("terraform init -input=false") || abort("terraform init failed")
+      system("terraform apply -auto-approve") || abort("terraform apply failed")
     end
   end
 
@@ -114,7 +119,7 @@ class BenchmarkOrchestrator
 
   def terraform_destroy
     Dir.chdir(TERRAFORM_DIR) do
-      system("terraform destroy -auto-approve -var=\"run_id=#{@run_id}\" > /dev/null 2>&1")
+      system("terraform destroy -auto-approve")
     end
   end
 
@@ -163,7 +168,7 @@ class BenchmarkOrchestrator
   end
 
   def run_benchmark(type, ip)
-    @instance_status[type] = "running"
+    @instance_status[type] = { status: "starting", benchmark: nil, progress: nil }
     update_status(phase: "running_benchmarks", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances, instance_status: @instance_status)
 
     ssh_command(ip, "mkdir -p ~/results")
@@ -181,13 +186,34 @@ class BenchmarkOrchestrator
       "
     CMD
 
-    result = ssh_command(ip, benchmark_cmd, timeout_secs: 3600)
+    # Run benchmark in background on remote, then poll for progress
+    ssh_command(ip, "nohup sh -c '#{benchmark_cmd}' > /dev/null 2>&1 & echo $!")
 
-    if result
-      @instance_status[type] = "completed"
+    @instance_status[type] = { status: "running", benchmark: nil, progress: nil }
+    update_status(phase: "running_benchmarks", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances, instance_status: @instance_status)
+
+    # Poll for progress until complete
+    loop do
+      sleep 5
+      progress = ssh_command(ip, "grep -o 'Running benchmark.*([0-9]*/[0-9]*)' ~/results/output.txt 2>/dev/null | tail -1")
+      if progress && (match = progress.match(/Running benchmark "([^"]+)" \((\d+)\/(\d+)\)/))
+        @instance_status[type] = { status: "running", benchmark: match[1], progress: "#{match[2]}/#{match[3]}" }
+      end
+      update_status(phase: "running_benchmarks", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances, instance_status: @instance_status)
+
+      # Check if benchmark finished (look for final summary or no docker running)
+      done_check = ssh_command(ip, "docker ps -q 2>/dev/null | head -1")
+      break if done_check&.strip&.empty?
+    end
+
+    # Check final result
+    result = ssh_command(ip, "test -f ~/results/output.txt && grep -q 'Average of last' ~/results/output.txt && echo success")
+
+    if result&.strip == "success"
+      @instance_status[type] = { status: "completed", benchmark: nil, progress: nil }
       @successful_instances << type
     else
-      @instance_status[type] = "failed"
+      @instance_status[type] = { status: "failed", benchmark: nil, progress: nil }
       @failed_instances << type
     end
     update_status(phase: "running_benchmarks", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances, instance_status: @instance_status)
