@@ -3,7 +3,7 @@
 ## AWS EC2 Instance Types
 - [ ] c7g.medium (Graviton3)
 - [ ] c7i.medium (Intel Sapphire Rapids)
-- [ ] m7a.medium (AMD EPYC Genoa)
+- [ ] c7a.medium
 
 ## Cloud Providers
 - [ ] AWS Fargate
