@@ -4,7 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ruby Benchmark Results</title>
-  <script src="/js/d3.v7.min.js" defer></script>
+  <script>
+    // Set base dynamically so production serves from /rubybench/ and local dev works at /
+    (() => {
+      const base = document.createElement('base');
+      base.href = window.location.pathname.startsWith('/rubybench') ? '/rubybench/' : '/';
+      document.head.appendChild(base);
+    })();
+  </script>
+  <script src="js/d3.v7.min.js" defer></script>
+  <link rel="icon" href="data:,">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html {
@@ -289,7 +298,7 @@
     <h1>The Great Cross-Cloud Ruby Benchmark</h1>
     <p class="subtitle">Comparing iteration times across <%= instance_names.size %> machine types on several public clouds. Each dot is one non-warmup iteration.</p>
     <p>This site was borne of my continuous frustration at <a href="https://speedshop.co">Speedshop</a> of clients running on old generation AWS instances, when I knew "free speed" was on the table. This page simply runs <a href="https://github.com/ruby/ruby-bench">ruby-bench</a>, a series of <i>mostly</i> CPU-bound benchmarks maintained by Ruby core and the YJIT developers. We run across multiple instances to reduce the effect of noisy neighbors.</p>
-    <p>All benchmarks are run with YJIT enabled on Ruby <%= ruby_version %>. View the code for this page <a href="https://github.com/speedshop/rubybencher">here.</a></p>
+    <p>All benchmarks were run on <%= run_date %> with YJIT enabled on Ruby <%= ruby_version %>. View the code for this page <a href="https://github.com/speedshop/rubybencher">here.</a></p>
   </div>
 
   <div class="mobile-legend" id="mobile-legend">
@@ -425,6 +434,7 @@
     const tableMap = {};    // tableMap[benchmark][instance] = array of td elements
     let summaryLines = [];  // all summary line elements
     let allDots = [];       // flat array of all dots for legend highlight
+    const legendItems = document.querySelectorAll('#legend [data-instance], #mobile-legend [data-instance]');
 
     // Build tableMap from existing DOM
     benchmarks.forEach(b => { tableMap[b] = {}; instances.forEach(i => { tableMap[b][i] = []; }); });
@@ -506,14 +516,14 @@
     }
 
     function highlightLegendItem(inst) {
-      document.querySelectorAll('#legend [data-instance], #mobile-legend [data-instance]').forEach(span => {
+      legendItems.forEach(span => {
         span.style.opacity = span.dataset.instance === inst ? '1' : '0.3';
         span.style.fontWeight = span.dataset.instance === inst ? '600' : 'normal';
       });
     }
 
     function clearLegendHighlight() {
-      document.querySelectorAll('#legend [data-instance], #mobile-legend [data-instance]').forEach(span => {
+      legendItems.forEach(span => {
         span.style.opacity = '1';
         span.style.fontWeight = 'normal';
       });
@@ -544,7 +554,7 @@
     }
 
     // Color legend swatches and add event listeners
-    document.querySelectorAll('#legend [data-instance], #mobile-legend [data-instance]').forEach(span => {
+    legendItems.forEach(span => {
       const inst = span.dataset.instance;
       span.querySelector('.swatch').style.background = colors[inst];
       span.addEventListener('pointerenter', () => highlightInstance(inst));
@@ -573,7 +583,6 @@
       if (cell) {
         const { benchmark, instance } = cell.dataset;
         if (benchmark === 'all') {
-          highlightInstance(instance);
           return;
         }
         clearHighlights();
@@ -720,10 +729,10 @@
         .attr('text-anchor', 'middle')
         .text(d => d + '%');
 
-      svg.selectAll('.summary-line')
+      svg.selectAll('.summary-benchmark-line')
         .data(avgData)
         .enter().append('line')
-        .attr('class', 'summary-line')
+        .attr('class', 'summary-line summary-benchmark-line')
         .attr('x1', d => x(d.relativePercent))
         .attr('x2', d => x(d.relativePercent))
         .attr('y1', 4)
@@ -749,7 +758,7 @@
     }
 
     // Fetch data, render summary immediately, lazy-load beeswarms
-    fetch('/data.json')
+    fetch('data.json')
       .then(r => r.json())
       .then(d => {
         data = d;

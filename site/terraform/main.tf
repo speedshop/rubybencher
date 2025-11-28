@@ -47,3 +47,9 @@ resource "cloudflare_worker_route" "rubybench" {
   pattern     = "speedshop.co/rubybench*"
   script_name = cloudflare_worker_script.rubybench_proxy.name
 }
+
+resource "cloudflare_worker_route" "rubybench_www" {
+  zone_id     = var.cloudflare_zone_id
+  pattern     = "www.speedshop.co/rubybench*"
+  script_name = cloudflare_worker_script.rubybench_proxy.name
+}

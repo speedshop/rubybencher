@@ -11,6 +11,12 @@ RESULTS_DIR = Dir.glob(File.join(RESULTS_BASE, '*')).select { |f| File.directory
 OUTPUT_DIR = File.expand_path('public', __dir__)
 OUTPUT_FILE = File.join(OUTPUT_DIR, 'index.html')
 TEMPLATE_FILE = File.expand_path('templates/report.html.erb', __dir__)
+INSTANCE_LABEL_PREFIX = 'aws-'
+
+def display_instance_name(name)
+  base = name.sub(/-[^-]+$/, '')
+  "#{INSTANCE_LABEL_PREFIX}#{base}"
+end
 
 def parse_benchmark_file(file_path)
   content = File.read(file_path)
@@ -68,16 +74,57 @@ def parse_benchmark_file(file_path)
   { benchmarks: benchmarks, architecture: architecture, ruby_version: ruby_version }
 end
 
-def generate_html(data)
+def remap_instances(data)
+  remapped = {}
+
+  data.each do |instance, inst_data|
+    new_name = display_instance_name(instance)
+    remapped[new_name] ||= {
+      benchmarks: {},
+      architecture: inst_data[:architecture],
+      ruby_version: inst_data[:ruby_version]
+    }
+
+    inst_data[:benchmarks].each do |bench_name, bench_data|
+      dest = remapped[new_name][:benchmarks][bench_name]
+      if dest
+        dest[:iterations].concat(bench_data[:iterations])
+      else
+        dest = {
+          iterations: bench_data[:iterations].dup,
+          average: bench_data[:average]
+        }
+        remapped[new_name][:benchmarks][bench_name] = dest
+      end
+    end
+  end
+
+  # Recalculate averages after merging
+  remapped.each_value do |inst_data|
+    inst_data[:benchmarks].each_value do |bench_data|
+      iters = bench_data[:iterations]
+      bench_data[:average] = (iters.sum.to_f / iters.size).round
+    end
+  end
+
+  remapped
+end
+
+def generate_html(data, run_id)
   all_benchmarks = data.values.flat_map { |d| d[:benchmarks].keys }.uniq.sort
   instance_names = data.keys.sort
   ruby_version = data.values.first[:ruby_version]
 
-  # Build iteration data for D3, sampled to ~1MB target
-  # Each data point is ~70 bytes in JSON, so target ~14,000 points
-  target_points = 14_000
-  total_iterations = data.values.sum { |d| d[:benchmarks].values.sum { |b| b[:iterations].size } }
-  sample_rate = [1.0, target_points.to_f / total_iterations].min
+  # Parse run_id (e.g., "20251128-143326") into formatted date
+  run_date = if run_id =~ /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/
+    Time.new($1.to_i, $2.to_i, $3.to_i, $4.to_i, $5.to_i, $6.to_i).strftime("%B %d, %Y at %H:%M UTC")
+  else
+    run_id
+  end
+
+  # Build iteration data for D3
+  # Sample up to max_per_instance points per benchmark/instance combo for even representation
+  max_per_instance = 50
 
   iteration_data = []
   all_benchmarks.each do |benchmark|
@@ -86,8 +133,8 @@ def generate_html(data)
       next unless bench_data
 
       iters = bench_data[:iterations]
-      # Sample evenly across iterations
-      sample_count = (iters.size * sample_rate).ceil.clamp(1, iters.size)
+      # Sample evenly up to max_per_instance
+      sample_count = [iters.size, max_per_instance].min
       step = iters.size.to_f / sample_count
       sampled = sample_count.times.map { |i| iters[(i * step).to_i] }
 
@@ -272,8 +319,11 @@ else
   end
 end
 
+data = remap_instances(data)
+
 puts "\nGenerating HTML report..."
-html, iteration_data = generate_html(data)
+run_id = File.basename(RESULTS_DIR)
+html, iteration_data = generate_html(data, run_id)
 File.write(OUTPUT_FILE, html)
 
 # Write iteration data to separate JSON file
