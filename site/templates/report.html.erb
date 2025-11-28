@@ -4,11 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ruby Benchmark Results</title>
-  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="/js/d3.v7.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      overflow-x: hidden;
+      max-width: 100%;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-family: 'Iowan Old Style', 'Palatino Linotype', 'URW Palladio L', P052, serif;
+      font-weight: normal;
       font-size: 12px;
       line-height: 1.4;
       color: #333;
@@ -16,7 +21,7 @@
     }
     h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
     h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px 0; color: #555; }
-    p.subtitle { font-size: 11px; color: #666; margin-bottom: 16px; }
+    p.subtitle { color: #666; }
     .summary {
       display: flex;
       gap: 24px;
@@ -36,11 +41,17 @@
     }
     .left-column {
       width: 570px;
+      max-width: 100%;
       flex-shrink: 0;
+      margin-bottom: 16px;
+    }
+    .left-column p {
+      margin-bottom: 8px;
     }
     .right-column {
       flex: 1;
       min-width: 0;
+      max-width: 100%;
     }
 
     @media (max-width: 999px) {
@@ -55,6 +66,7 @@
       }
       .benchmark-cell {
         width: 125px;
+        max-width: calc(50% - 2px);
         height: auto;
       }
     }
@@ -89,6 +101,7 @@
       gap: 12px;
       margin-bottom: 8px;
       font-size: 10px;
+      min-height: 18px;
     }
     .instance-legend span {
       display: flex;
@@ -159,6 +172,13 @@
     .benchmark-name:hover {
       background: #f0f0f0;
     }
+    .benchmark-name a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .benchmark-name a:hover {
+      text-decoration: underline;
+    }
     tr.all-row .benchmark-name:hover {
       background: #e0e4e8;
     }
@@ -216,7 +236,10 @@
 
     .summary-beeswarm {
       width: 100%;
+      max-width: 100%;
+      height: 62px;
       margin-bottom: 16px;
+      overflow-x: auto;
     }
     .summary-beeswarm svg {
       width: 100%;
@@ -227,6 +250,7 @@
       gap: 12px;
       margin-bottom: 8px;
       font-size: 10px;
+      min-height: 18px;
     }
     .mobile-legend span {
       display: flex;
@@ -246,15 +270,18 @@
   </style>
 </head>
 <body>
-  <h1>Ruby Benchmark Results</h1>
-  <p class="subtitle">Comparing iteration times across <%= instance_names.size %> AWS instance types. Each dot is one non-warmup iteration.</p>
+  <div class="left-column">
+    <h1>The Great Cross-Cloud Ruby Benchmark</h1>
+    <p class="subtitle">Comparing iteration times across <%= instance_names.size %> machine types on several public clouds. Each dot is one non-warmup iteration.</p>
+    <p>This site was borne of my continuous frustration at <a href="https://speedshop.co">Speedshop</a> of clients running on old generation AWS instances, when I knew "free speed" was on the table. This page simply runs <a href="https://github.com/ruby/ruby-bench">ruby-bench</a>, a series of <i>mostly</i> CPU-bound benchmarks maintained by Ruby core and the YJIT developers.</p>
+    <p>All benchmarks are run with YJIT enabled on Ruby <%= ruby_version %>. View the code for this page <a href="https://github.com/speedshop/rubybencher">here.</a></p>
+  </div>
 
   <div class="mobile-legend" id="mobile-legend"></div>
   <div class="summary-beeswarm" id="summary-beeswarm"></div>
 
   <div class="main-layout">
     <div class="left-column">
-      <h2>Summary Table</h2>
       <input type="text" id="filter" placeholder="Filter benchmarks...">
       <div class="color-legend">
         <span>0%</span>
@@ -302,7 +329,7 @@
               min_time = times.min
             %>
             <tr data-name="<%= row[:name].downcase %>" data-benchmark="<%= row[:name] %>">
-              <td class="benchmark-name"><%= row[:name] %></td>
+              <td class="benchmark-name"><a href="https://github.com/ruby/ruby-bench/tree/main/benchmarks/<%= row[:name] %>" target="_blank"><%= row[:name] %></a></td>
               <% instance_names.each do |instance| %>
               <%
                 time = row[instance]
@@ -327,7 +354,6 @@
     </div>
 
     <div class="right-column">
-      <h2>Iteration Distribution</h2>
       <div class="instance-legend" id="legend"></div>
       <div id="beeswarm-matrix"></div>
     </div>

@@ -16,9 +16,10 @@ def parse_benchmark_file(file_path)
   content = File.read(file_path)
   benchmarks = {}
 
-  # Find architecture
-  arch_match = content.match(/ruby \d+\.\d+\.\d+ .* \[(\w+-linux)\]/)
-  architecture = arch_match ? arch_match[1] : 'unknown'
+  # Find Ruby version and architecture
+  version_match = content.match(/ruby (\d+\.\d+\.\d+) .* \[(\w+-linux)\]/)
+  ruby_version = version_match ? version_match[1] : 'unknown'
+  architecture = version_match ? version_match[2] : 'unknown'
 
   lines = content.lines
   current_benchmark = nil
@@ -64,12 +65,13 @@ def parse_benchmark_file(file_path)
     end
   end
 
-  { benchmarks: benchmarks, architecture: architecture }
+  { benchmarks: benchmarks, architecture: architecture, ruby_version: ruby_version }
 end
 
 def generate_html(data)
   all_benchmarks = data.values.flat_map { |d| d[:benchmarks].keys }.uniq.sort
   instance_names = data.keys.sort
+  ruby_version = data.values.first[:ruby_version]
 
   # Build iteration data for D3 (sample to max 15 per instance per benchmark)
   max_samples = 15
@@ -175,6 +177,10 @@ puts "Using results from: #{RESULTS_DIR}"
 puts "Parsing benchmark results..."
 
 FileUtils.mkdir_p(OUTPUT_DIR)
+
+# Copy static assets to public
+static_dir = File.expand_path('static', __dir__)
+FileUtils.cp_r(Dir.glob(File.join(static_dir, '*')), OUTPUT_DIR)
 
 instance_dirs = Dir.glob(File.join(RESULTS_DIR, '*')).select { |f| File.directory?(f) }
 data = {}
