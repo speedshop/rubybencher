@@ -14,45 +14,73 @@ class BenchmarkOrchestrator
   SSH_OPTIONS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"
   MAX_SSH_RETRIES = 30
   SSH_RETRY_DELAY = 10
+  NUM_RUNS = 3
 
   def initialize
     @run_id = Time.now.strftime("%Y%m%d-%H%M%S")
     @results_path = File.join(RESULTS_DIR, @run_id)
-    @failed_instances = []
-    @successful_instances = []
-    @instance_status = {}
+    @failed_runs = []
+    @successful_runs = []
   end
 
   def run
-    update_status(phase: "starting", run_id: @run_id)
-
+    update_status(phase: "starting", run_id: @run_id, total_runs: NUM_RUNS)
     setup_results_directory
-    terraform_apply
-    outputs = terraform_outputs
 
-    @ssh_key = File.expand_path(outputs["ssh_key_path"]["value"], TERRAFORM_DIR)
-    @ssh_user = outputs["ssh_user"]["value"]
-    @instances = outputs["instance_ips"]["value"]
+    NUM_RUNS.times do |run_index|
+      run_number = run_index + 1
+      @current_run = run_number
+      @current_run_path = File.join(@results_path, "run-#{run_number}")
+      FileUtils.mkdir_p(@current_run_path)
 
-    update_status(phase: "instances_ready", instances: @instances)
+      @failed_instances = []
+      @successful_instances = []
+      @instance_status = {}
 
-    wait_for_ssh_ready
-    wait_for_setup_complete
-    run_benchmarks_parallel
-    collect_results
+      update_status(phase: "starting_run", run_id: @run_id, current_run: run_number, total_runs: NUM_RUNS)
 
-    if @failed_instances.empty?
-      update_status(phase: "destroying", message: "All benchmarks succeeded")
-      terraform_destroy
-      update_status(phase: "complete", results_path: @results_path)
+      terraform_apply
+      outputs = terraform_outputs
+
+      @ssh_key = File.expand_path(outputs["ssh_key_path"]["value"], TERRAFORM_DIR)
+      @ssh_user = outputs["ssh_user"]["value"]
+      @instances = outputs["instance_ips"]["value"]
+
+      update_status(phase: "instances_ready", current_run: run_number, total_runs: NUM_RUNS, instances: @instances)
+
+      wait_for_ssh_ready
+      wait_for_setup_complete
+      run_benchmarks_parallel
+      collect_results
+
+      if @failed_instances.empty?
+        update_status(phase: "destroying", current_run: run_number, total_runs: NUM_RUNS, message: "Run #{run_number} succeeded")
+        terraform_destroy
+        @successful_runs << run_number
+      else
+        update_status(
+          phase: "run_failed",
+          current_run: run_number,
+          total_runs: NUM_RUNS,
+          failed: @failed_instances,
+          successful: @successful_instances,
+          ssh_key: @ssh_key,
+          instances: @instances
+        )
+        @failed_runs << { run: run_number, failed_instances: @failed_instances, instances: @instances }
+        # Don't destroy infrastructure for failed runs to allow debugging
+      end
+    end
+
+    if @failed_runs.empty?
+      update_status(phase: "complete", results_path: @results_path, successful_runs: @successful_runs)
       exit 0
     else
       update_status(
         phase: "failed",
-        failed: @failed_instances,
-        successful: @successful_instances,
-        ssh_key: @ssh_key,
-        instances: @instances
+        results_path: @results_path,
+        successful_runs: @successful_runs,
+        failed_runs: @failed_runs
       )
       exit 1
     end
@@ -70,7 +98,7 @@ class BenchmarkOrchestrator
   end
 
   def terraform_apply
-    update_status(phase: "terraform_apply")
+    update_status(phase: "terraform_apply", current_run: @current_run, total_runs: NUM_RUNS)
     Dir.chdir(TERRAFORM_DIR) do
       system("terraform init -input=false > /dev/null 2>&1") || abort("terraform init failed")
       system("terraform apply -auto-approve -var=\"run_id=#{@run_id}\" > /dev/null 2>&1") || abort("terraform apply failed")
@@ -91,12 +119,12 @@ class BenchmarkOrchestrator
   end
 
   def wait_for_ssh_ready
-    update_status(phase: "waiting_for_ssh", instances: @instances)
+    update_status(phase: "waiting_for_ssh", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances)
     threads = @instances.map do |type, ip|
       Thread.new { wait_for_ssh(type, ip) }
     end
     threads.each(&:join)
-    update_status(phase: "ssh_ready", instances: @instances)
+    update_status(phase: "ssh_ready", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances)
   end
 
   def wait_for_ssh(type, ip)
@@ -109,12 +137,12 @@ class BenchmarkOrchestrator
   end
 
   def wait_for_setup_complete
-    update_status(phase: "waiting_for_docker_setup", instances: @instances)
+    update_status(phase: "waiting_for_docker_setup", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances)
     threads = @instances.map do |type, ip|
       Thread.new { wait_for_setup(type, ip) }
     end
     threads.each(&:join)
-    update_status(phase: "docker_ready", instances: @instances)
+    update_status(phase: "docker_ready", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances)
   end
 
   def wait_for_setup(type, ip)
@@ -127,7 +155,7 @@ class BenchmarkOrchestrator
   end
 
   def run_benchmarks_parallel
-    update_status(phase: "running_benchmarks", instances: @instances, instance_status: @instance_status)
+    update_status(phase: "running_benchmarks", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances, instance_status: @instance_status)
     threads = @instances.map do |type, ip|
       Thread.new { run_benchmark(type, ip) }
     end
@@ -136,7 +164,7 @@ class BenchmarkOrchestrator
 
   def run_benchmark(type, ip)
     @instance_status[type] = "running"
-    update_status(phase: "running_benchmarks", instances: @instances, instance_status: @instance_status)
+    update_status(phase: "running_benchmarks", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances, instance_status: @instance_status)
 
     ssh_command(ip, "mkdir -p ~/results")
 
@@ -162,13 +190,13 @@ class BenchmarkOrchestrator
       @instance_status[type] = "failed"
       @failed_instances << type
     end
-    update_status(phase: "running_benchmarks", instances: @instances, instance_status: @instance_status)
+    update_status(phase: "running_benchmarks", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances, instance_status: @instance_status)
   end
 
   def collect_results
-    update_status(phase: "collecting_results", instances: @instances)
+    update_status(phase: "collecting_results", current_run: @current_run, total_runs: NUM_RUNS, instances: @instances)
     @instances.each do |type, ip|
-      instance_results_dir = File.join(@results_path, type.gsub(".", "-"))
+      instance_results_dir = File.join(@current_run_path, type.gsub(".", "-"))
       FileUtils.mkdir_p(instance_results_dir)
 
       scp_cmd = "scp -i #{@ssh_key} #{SSH_OPTIONS} -r #{@ssh_user}@#{ip}:~/results/* #{instance_results_dir}/ 2>/dev/null"
