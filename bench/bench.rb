@@ -35,6 +35,7 @@ class BenchmarkOrchestrator
     @ssh_key = File.expand_path(outputs["ssh_key_path"]["value"], TERRAFORM_DIR)
     @ssh_user = outputs["ssh_user"]["value"]
     @instances = outputs["instance_ips"]["value"]
+    @instance_ids = outputs["instance_ids"]["value"]
     @instances_by_type = outputs["instances_by_type"]["value"]
     @replicas = outputs["replicas"]["value"]
 
@@ -42,8 +43,7 @@ class BenchmarkOrchestrator
 
     wait_for_ssh_ready
     wait_for_setup_complete
-    run_benchmarks_parallel
-    collect_results
+    run_benchmarks_by_type
 
     if @failed_instances.empty?
       update_status(phase: "destroying", message: "All benchmarks succeeded")
@@ -101,6 +101,13 @@ class BenchmarkOrchestrator
     end
   end
 
+  def terminate_instances(instance_keys)
+    instance_ids = instance_keys.map { |key| @instance_ids[key] }.compact
+    return if instance_ids.empty?
+
+    system("aws ec2 terminate-instances --region us-east-1 --instance-ids #{instance_ids.join(" ")} > /dev/null 2>&1")
+  end
+
   def wait_for_ssh_ready
     update_status(phase: "waiting_for_ssh", instances: @instances)
     threads = @instances.map do |instance_key, ip|
@@ -137,12 +144,25 @@ class BenchmarkOrchestrator
     false
   end
 
-  def run_benchmarks_parallel
+  def run_benchmarks_by_type
     update_status(phase: "running_benchmarks", instances: @instances)
-    threads = @instances.map do |instance_key, ip|
-      Thread.new { run_benchmark(instance_key, ip) }
+
+    # Each instance type gets its own coordinator thread
+    type_threads = @instances_by_type.map do |type_name, type_instances|
+      Thread.new do
+        # Run all replicas of this type in parallel
+        replica_threads = type_instances.map do |instance_key, ip|
+          Thread.new { run_benchmark(instance_key, ip) }
+        end
+        replica_threads.each(&:join)
+
+        # All replicas of this type are done - collect results and terminate
+        collect_results_for_type(type_name, type_instances)
+        terminate_instances(type_instances.keys)
+      end
     end
-    threads.each(&:join)
+
+    type_threads.each(&:join)
   end
 
   def run_benchmark(instance_key, ip)
@@ -194,25 +214,28 @@ class BenchmarkOrchestrator
     # Check final result
     result = ssh_command(ip, "test -f ~/results/output.txt && grep -q \"Average of last\" ~/results/output.txt && echo success")
 
-    if result&.strip == "success"
-      @instance_status[instance_key] = { status: "completed", benchmark: nil, progress: nil }
-      @successful_instances << instance_key
-    else
-      @instance_status[instance_key] = { status: "failed", benchmark: nil, progress: nil }
-      @failed_instances << instance_key
+    @status_mutex.synchronize do
+      if result&.strip == "success"
+        @instance_status[instance_key] = { status: "completed", benchmark: nil, progress: nil }
+        @successful_instances << instance_key
+      else
+        @instance_status[instance_key] = { status: "failed", benchmark: nil, progress: nil }
+        @failed_instances << instance_key
+      end
     end
     update_status(phase: "running_benchmarks", instances: @instances)
   end
 
-  def collect_results
-    update_status(phase: "collecting_results", instances: @instances)
-    @instances.each do |instance_key, ip|
+  def collect_results_for_type(type_name, type_instances)
+    type_instances.each do |instance_key, ip|
       # instance_key is like "c6g.medium-1" -> create dir "c6g-medium-1"
       instance_results_dir = File.join(@results_path, instance_key.gsub(".", "-"))
       FileUtils.mkdir_p(instance_results_dir)
 
       scp_cmd = "scp -i #{@ssh_key} #{SSH_OPTIONS} -r #{@ssh_user}@#{ip}:~/results/* #{instance_results_dir}/ 2>/dev/null"
-      @failed_instances << instance_key unless system(scp_cmd) || @failed_instances.include?(instance_key)
+      @status_mutex.synchronize do
+        @failed_instances << instance_key unless system(scp_cmd) || @failed_instances.include?(instance_key)
+      end
     end
   end
 
