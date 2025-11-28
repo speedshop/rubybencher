@@ -166,7 +166,7 @@ def generate_html(data)
   end
 
   template = File.read(TEMPLATE_FILE)
-  ERB.new(template).result(binding)
+  [ERB.new(template).result(binding), iteration_data]
 end
 
 # Main
@@ -198,7 +198,12 @@ instance_dirs.each do |dir|
 end
 
 puts "\nGenerating HTML report..."
-html = generate_html(data)
+html, iteration_data = generate_html(data)
 File.write(OUTPUT_FILE, html)
+
+# Write iteration data to separate JSON file
+data_json_file = File.join(OUTPUT_DIR, 'data.json')
+File.write(data_json_file, JSON.generate(iteration_data))
+puts "Data file generated: #{data_json_file} (#{File.size(data_json_file)} bytes)"
 
 puts "Report generated: #{OUTPUT_FILE}"

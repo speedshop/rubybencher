@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ruby Benchmark Results</title>
-  <script src="/js/d3.v7.min.js"></script>
+  <script src="/js/d3.v7.min.js" defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
@@ -361,8 +361,7 @@
 
   <div class="tooltip" id="tooltip" style="display:none"></div>
 
-  <script>
-    const data = <%= iteration_data.to_json %>;
+  <script type="module">
     const instances = <%= instance_names.to_json %>;
     const benchmarks = <%= all_benchmarks.to_json %>;
 
@@ -373,16 +372,39 @@
       '<%= instance_names[3] %>': '#76b7b2'
     };
 
+    const tooltip = d3.select('#tooltip');
+
+    // Color scale for relative percentages (green = 0%, red = 300%+)
+    const colorScale = d3.scaleLinear()
+      .domain([0, 50, 150, 300])
+      .range(['#22863a', '#6a9f3d', '#d9822b', '#cb2431'])
+      .clamp(true);
+
+    // Apply colors to relative percentages (runs immediately, no data needed)
+    document.querySelectorAll('.rel-cell[data-relative]').forEach(el => {
+      const rel = parseFloat(el.dataset.relative);
+      if (rel > 0) {
+        el.style.color = colorScale(rel);
+      } else if (el.textContent.trim() === '') {
+        // Leave empty cells unstyled
+      } else {
+        el.style.color = '#22863a'; // Green for 0% (fastest)
+      }
+    });
+
+    // Create gradient for legend bar
+    const legendBar = document.getElementById('color-legend-bar');
+    const gradientStops = [0, 50, 150, 300].map(v => colorScale(v));
+    legendBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+
     // Build legend with hover to highlight all instance datapoints
     const legend = d3.select('#legend');
     const mobileLegend = d3.select('#mobile-legend');
 
     function highlightInstance(inst) {
-      // Highlight in summary chart
       d3.selectAll('.summary-line')
         .attr('opacity', d => d.instance === inst ? 1 : 0.05)
         .attr('stroke-width', d => d.instance === inst ? 2 : 1);
-      // Highlight in beeswarm matrix
       d3.selectAll('.benchmark-cell .dot')
         .classed('dimmed', d => d.instance !== inst)
         .classed('highlighted', d => d.instance === inst);
@@ -398,41 +420,197 @@
     }
 
     instances.forEach(inst => {
-      const legendSpan = legend.append('span')
+      legend.append('span')
         .style('cursor', 'pointer')
         .html(`<span class="swatch" style="background:${colors[inst]}"></span>${inst}`)
         .on('mouseenter', () => highlightInstance(inst))
         .on('mouseleave', clearInstanceHighlight);
-      const mobileSpan = mobileLegend.append('span')
+      mobileLegend.append('span')
         .style('cursor', 'pointer')
         .html(`<span class="swatch" style="background:${colors[inst]}"></span>${inst}`)
         .on('mouseenter', () => highlightInstance(inst))
         .on('mouseleave', clearInstanceHighlight);
     });
 
-    const tooltip = d3.select('#tooltip');
+    function highlightTableCells(benchmark, instance) {
+      document.querySelectorAll(
+        `td.instance-cell[data-benchmark="${benchmark}"][data-instance="${instance}"]`
+      ).forEach(cell => cell.classList.add('table-highlight'));
+    }
 
-    // Summary chart - vertical lines for each benchmark/instance average as % relative to fastest
-    {
+    function clearTableHighlight() {
+      document.querySelectorAll('.table-highlight').forEach(el => el.classList.remove('table-highlight'));
+    }
+
+    // Beeswarm parameters
+    const cellWidth = 150;
+    const cellHeight = 62;
+    const cellPadding = 5;
+
+    // Create placeholder SVGs for each benchmark (so layout is stable)
+    const container = d3.select('#beeswarm-matrix');
+    benchmarks.forEach(benchmark => {
+      container.append('svg')
+        .attr('class', 'benchmark-cell')
+        .attr('data-benchmark', benchmark)
+        .attr('data-loaded', 'false')
+        .attr('width', cellWidth)
+        .attr('height', cellHeight)
+        .attr('viewBox', `0 0 ${cellWidth} ${cellHeight}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet')
+        .append('text')
+        .attr('class', 'benchmark-label')
+        .attr('x', cellWidth / 2)
+        .attr('y', 11)
+        .text(benchmark.length > 22 ? benchmark.slice(0, 20) + '…' : benchmark);
+    });
+
+    // Table filter (works without data)
+    const filterInput = document.getElementById('filter');
+    const tableRows = document.querySelectorAll('#results-table tbody tr');
+    filterInput.addEventListener('input', function() {
+      const filter = this.value.toLowerCase();
+      tableRows.forEach(row => {
+        row.style.display = row.dataset.name.includes(filter) ? '' : 'none';
+      });
+      document.querySelectorAll('.benchmark-cell').forEach(cell => {
+        cell.style.display = cell.dataset.benchmark.toLowerCase().includes(filter) ? '' : 'none';
+      });
+    });
+
+    // Table hover interactions (work without dots being rendered)
+    document.querySelectorAll('.benchmark-name').forEach(cell => {
+      cell.addEventListener('mouseenter', function() {
+        const benchmark = this.closest('tr').dataset.benchmark;
+        if (benchmark === 'all') return;
+        const svgCell = document.querySelector(`.benchmark-cell[data-benchmark="${benchmark}"]`);
+        if (svgCell) {
+          svgCell.classList.add('svg-highlight');
+          d3.select(svgCell).selectAll('.dot').classed('highlighted', true);
+        }
+      });
+      cell.addEventListener('mouseleave', function() {
+        d3.selectAll('.benchmark-cell').classed('svg-highlight', false);
+        d3.selectAll('.dot').classed('dimmed', false).classed('highlighted', false);
+      });
+    });
+
+    document.querySelectorAll('.instance-cell').forEach(cell => {
+      cell.addEventListener('mouseenter', function() {
+        const { benchmark, instance } = this.dataset;
+        if (benchmark === 'all') return;
+        highlightTableCells(benchmark, instance);
+        const svgCell = document.querySelector(`.benchmark-cell[data-benchmark="${benchmark}"]`);
+        if (svgCell) {
+          svgCell.classList.add('svg-highlight');
+          d3.select(svgCell).selectAll('.dot')
+            .classed('dimmed', dot => dot.instance !== instance)
+            .classed('highlighted', dot => dot.instance === instance);
+        }
+      });
+      cell.addEventListener('mouseleave', function() {
+        clearTableHighlight();
+        d3.selectAll('.benchmark-cell').classed('svg-highlight', false);
+        d3.selectAll('.dot').classed('dimmed', false).classed('highlighted', false);
+      });
+    });
+
+    // Fetch data and render charts
+    let data = null;
+    let byBenchmark = null;
+
+    function renderBeeswarm(svg, benchmark) {
+      if (svg.attr('data-loaded') === 'true') return;
+      svg.attr('data-loaded', 'true');
+
+      const benchData = byBenchmark.get(benchmark) || [];
+      if (benchData.length === 0) return;
+
+      const times = benchData.map(d => d.time);
+      const xExtent = d3.extent(times);
+      const xPadding = (xExtent[1] - xExtent[0]) * 0.1 || 10;
+      const x = d3.scaleLinear()
+        .domain([xExtent[0], xExtent[1] + xPadding])
+        .range([cellPadding + 3, cellWidth - cellPadding]);
+
+      const radius = 3;
+      const centerY = cellHeight / 2 + 3;
+
+      const sorted = [...benchData].sort((a, b) => a.time - b.time);
+      const positions = [];
+      sorted.forEach(d => {
+        const px = x(d.time);
+        let py = centerY;
+        let dir = 1;
+        let offset = 0;
+        while (positions.some(p => Math.abs(p.x - px) < radius * 2 && Math.abs(p.y - py) < radius * 2)) {
+          offset += radius * 2;
+          py = centerY + offset * dir;
+          dir *= -1;
+          if (offset > 25) break;
+        }
+        d.px = px;
+        d.py = Math.max(16, Math.min(cellHeight - 16, py));
+        positions.push({x: px, y: d.py});
+      });
+
+      const axisG = svg.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,${cellHeight - 12})`);
+      axisG.selectAll('text')
+        .data(x.ticks(3))
+        .enter().append('text')
+        .attr('x', d => x(d))
+        .attr('y', 8)
+        .attr('text-anchor', 'middle')
+        .text(d => d >= 1000 ? (d/1000).toFixed(1) + 's' : d + 'ms');
+
+      svg.selectAll('.dot')
+        .data(benchData)
+        .enter().append('circle')
+        .attr('class', 'dot')
+        .attr('data-instance', d => d.instance)
+        .attr('data-benchmark', benchmark)
+        .attr('cx', d => d.px)
+        .attr('cy', d => d.py)
+        .attr('r', radius)
+        .attr('fill', d => colors[d.instance])
+        .on('mouseenter', function(event, d) {
+          d3.select(this.parentNode).selectAll('.dot')
+            .classed('dimmed', dot => dot.instance !== d.instance)
+            .classed('highlighted', dot => dot.instance === d.instance);
+          highlightTableCells(d.benchmark, d.instance);
+          tooltip.style('display', 'block')
+            .style('left', (event.pageX + 10) + 'px')
+            .style('top', (event.pageY - 10) + 'px')
+            .html(`${d.instance}: ${d.time}ms`);
+        })
+        .on('mouseleave', function() {
+          d3.select(this.parentNode).selectAll('.dot')
+            .classed('dimmed', false)
+            .classed('highlighted', false);
+          clearTableHighlight();
+          tooltip.style('display', 'none');
+        });
+    }
+
+    function renderSummaryChart() {
       const summaryContainer = d3.select('#summary-beeswarm');
       const summaryWidth = summaryContainer.node().getBoundingClientRect().width || 800;
       const summaryHeight = 62;
 
-      // Calculate average per benchmark/instance, then relative % to fastest average per benchmark
       const byBench = d3.group(data, d => d.benchmark);
       const avgData = [];
       byBench.forEach((points, benchmark) => {
         const byInstance = d3.group(points, d => d.instance);
         const instanceAvgs = [];
         byInstance.forEach((instPoints, instance) => {
-          const avg = d3.mean(instPoints, d => d.time);
-          instanceAvgs.push({ instance, avg });
+          instanceAvgs.push({ instance, avg: d3.mean(instPoints, d => d.time) });
         });
         const minAvg = d3.min(instanceAvgs, d => d.avg);
         instanceAvgs.forEach(({ instance, avg }) => {
           avgData.push({
-            benchmark,
-            instance,
+            benchmark, instance,
             avgTime: Math.round(avg),
             relativePercent: ((avg / minAvg) - 1) * 100
           });
@@ -440,31 +618,25 @@
       });
 
       const maxRelative = d3.max(avgData, d => d.relativePercent);
-
       const svg = summaryContainer.append('svg')
         .attr('width', summaryWidth)
         .attr('height', summaryHeight)
         .attr('viewBox', `0 0 ${summaryWidth} ${summaryHeight}`)
         .attr('preserveAspectRatio', 'xMidYMid meet');
 
-      const x = d3.scaleLinear()
-        .domain([0, maxRelative])
-        .range([5, summaryWidth - 5]);
+      const x = d3.scaleLinear().domain([0, maxRelative]).range([5, summaryWidth - 5]);
 
-      // Axis
-      const axisG = svg.append('g')
+      svg.append('g')
         .attr('class', 'axis')
-        .attr('transform', `translate(0,${summaryHeight - 8})`);
-      const ticks = x.ticks(10);
-      axisG.selectAll('text')
-        .data(ticks)
+        .attr('transform', `translate(0,${summaryHeight - 8})`)
+        .selectAll('text')
+        .data(x.ticks(10))
         .enter().append('text')
         .attr('x', d => x(d))
         .attr('y', 7)
         .attr('text-anchor', 'middle')
         .text(d => d + '%');
 
-      // Vertical lines
       svg.selectAll('.summary-line')
         .data(avgData)
         .enter().append('line')
@@ -489,223 +661,28 @@
         });
     }
 
-    // Beeswarm parameters
-    const cellWidth = 150;
-    const cellHeight = 62;
-    const cellPadding = 5;
+    // Fetch data, render summary immediately, lazy-load beeswarms
+    fetch('/data.json')
+      .then(r => r.json())
+      .then(d => {
+        data = d;
+        byBenchmark = d3.group(data, d => d.benchmark);
 
-    const container = d3.select('#beeswarm-matrix');
+        renderSummaryChart();
 
-    // Group data by benchmark
-    const byBenchmark = d3.group(data, d => d.benchmark);
+        // Lazy-load beeswarms with IntersectionObserver
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const svg = d3.select(entry.target);
+              renderBeeswarm(svg, entry.target.dataset.benchmark);
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { rootMargin: '100px' });
 
-    benchmarks.forEach((benchmark, i) => {
-      const benchData = byBenchmark.get(benchmark) || [];
-      if (benchData.length === 0) return;
-
-      const svg = container.append('svg')
-        .attr('class', 'benchmark-cell')
-        .attr('data-benchmark', benchmark)
-        .attr('width', cellWidth)
-        .attr('height', cellHeight)
-        .attr('viewBox', `0 0 ${cellWidth} ${cellHeight}`)
-        .attr('preserveAspectRatio', 'xMidYMid meet');
-
-      // X scale for time - start at min value, add padding only on right
-      const times = benchData.map(d => d.time);
-      const xExtent = d3.extent(times);
-      const xPadding = (xExtent[1] - xExtent[0]) * 0.1 || 10;
-      const x = d3.scaleLinear()
-        .domain([xExtent[0], xExtent[1] + xPadding])
-        .range([cellPadding + 3, cellWidth - cellPadding]);
-
-      const radius = 3;
-      const centerY = cellHeight / 2 + 3;
-
-      // Simple dodge: sort by x, stack vertically when overlapping
-      const sorted = [...benchData].sort((a, b) => a.time - b.time);
-      const positions = [];
-      sorted.forEach(d => {
-        const px = x(d.time);
-        // Find non-overlapping y position
-        let py = centerY;
-        let dir = 1;
-        let offset = 0;
-        while (positions.some(p => Math.abs(p.x - px) < radius * 2 && Math.abs(p.y - py) < radius * 2)) {
-          offset += radius * 2;
-          py = centerY + offset * dir;
-          dir *= -1;
-          if (offset > 25) break;
-        }
-        d.px = px;
-        d.py = Math.max(16, Math.min(cellHeight - 16, py));
-        positions.push({x: px, y: d.py});
+        document.querySelectorAll('.benchmark-cell').forEach(cell => observer.observe(cell));
       });
-
-      // Axis
-      const axisG = svg.append('g')
-        .attr('class', 'axis')
-        .attr('transform', `translate(0,${cellHeight - 12})`);
-
-      const ticks = x.ticks(3);
-      axisG.selectAll('text')
-        .data(ticks)
-        .enter().append('text')
-        .attr('x', d => x(d))
-        .attr('y', 8)
-        .attr('text-anchor', 'middle')
-        .text(d => d >= 1000 ? (d/1000).toFixed(1) + 's' : d + 'ms');
-
-      // Benchmark label
-      svg.append('text')
-        .attr('class', 'benchmark-label')
-        .attr('x', cellWidth / 2)
-        .attr('y', 11)
-        .text(benchmark.length > 22 ? benchmark.slice(0, 20) + '…' : benchmark);
-
-      // Dots
-      svg.selectAll('.dot')
-        .data(benchData)
-        .enter().append('circle')
-        .attr('class', 'dot')
-        .attr('data-instance', d => d.instance)
-        .attr('data-benchmark', benchmark)
-        .attr('cx', d => d.px)
-        .attr('cy', d => d.py)
-        .attr('r', radius)
-        .attr('fill', d => colors[d.instance])
-        .on('mouseenter', function(event, d) {
-          const parentSvg = this.parentNode;
-          // Highlight only dots of same instance within this beeswarm
-          d3.select(parentSvg).selectAll('.dot')
-            .classed('dimmed', dot => dot.instance !== d.instance)
-            .classed('highlighted', dot => dot.instance === d.instance);
-          // Highlight corresponding table cells
-          highlightTableCells(d.benchmark, d.instance);
-          // Show tooltip
-          tooltip.style('display', 'block')
-            .style('left', (event.pageX + 10) + 'px')
-            .style('top', (event.pageY - 10) + 'px')
-            .html(`${d.instance}: ${d.time}ms`);
-        })
-        .on('mouseleave', function() {
-          const parentSvg = this.parentNode;
-          d3.select(parentSvg).selectAll('.dot')
-            .classed('dimmed', false)
-            .classed('highlighted', false);
-          clearTableHighlight();
-          tooltip.style('display', 'none');
-        });
-    });
-
-    function highlightTableCells(benchmark, instance) {
-      // Find and highlight all 3 cells for this instance/benchmark
-      const cells = document.querySelectorAll(
-        `td.instance-cell[data-benchmark="${benchmark}"][data-instance="${instance}"]`
-      );
-      cells.forEach(cell => {
-        cell.classList.add('table-highlight');
-      });
-    }
-
-    function clearTableHighlight() {
-      document.querySelectorAll('.table-highlight').forEach(el => {
-        el.classList.remove('table-highlight');
-      });
-    }
-
-    // Color scale for relative percentages (green = 0%, red = 300%+)
-    const colorScale = d3.scaleLinear()
-      .domain([0, 50, 150, 300])
-      .range(['#22863a', '#6a9f3d', '#d9822b', '#cb2431'])
-      .clamp(true);
-
-    // Apply colors to relative percentages
-    document.querySelectorAll('.rel-cell[data-relative]').forEach(el => {
-      const rel = parseFloat(el.dataset.relative);
-      if (rel > 0) {
-        el.style.color = colorScale(rel);
-      } else if (el.textContent.trim() === '') {
-        // Leave empty cells unstyled
-      } else {
-        el.style.color = '#22863a'; // Green for 0% (fastest)
-      }
-    });
-
-    // Create gradient for legend bar
-    const legendBar = document.getElementById('color-legend-bar');
-    const gradientStops = [0, 50, 150, 300].map(v => colorScale(v));
-    legendBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
-
-    // Table and beeswarm filter
-    const filterInput = document.getElementById('filter');
-    const tableRows = document.querySelectorAll('#results-table tbody tr');
-    const beeswarmCells = document.querySelectorAll('.benchmark-cell');
-    filterInput.addEventListener('input', function() {
-      const filter = this.value.toLowerCase();
-      tableRows.forEach(row => {
-        row.style.display = row.dataset.name.includes(filter) ? '' : 'none';
-      });
-      beeswarmCells.forEach(cell => {
-        const benchmark = cell.dataset.benchmark.toLowerCase();
-        cell.style.display = benchmark.includes(filter) ? '' : 'none';
-      });
-    });
-
-    // Benchmark name hover -> highlight entire beeswarm
-    document.querySelectorAll('.benchmark-name').forEach(cell => {
-      cell.addEventListener('mouseenter', function() {
-        const row = this.closest('tr');
-        const benchmark = row.dataset.benchmark;
-        if (benchmark === 'all') return; // Skip "all" row as it has no beeswarm
-
-        // Find and highlight the corresponding beeswarm
-        const svgCell = document.querySelector(`.benchmark-cell[data-benchmark="${benchmark}"]`);
-        if (svgCell) {
-          svgCell.classList.add('svg-highlight');
-          d3.select(svgCell).selectAll('.dot').classed('highlighted', true);
-        }
-      });
-
-      cell.addEventListener('mouseleave', function() {
-        // Clear all beeswarm highlights
-        d3.selectAll('.benchmark-cell').classed('svg-highlight', false);
-        d3.selectAll('.dot')
-          .classed('dimmed', false)
-          .classed('highlighted', false);
-      });
-    });
-
-    // Instance cell hover -> highlight just that instance in the beeswarm
-    document.querySelectorAll('.instance-cell').forEach(cell => {
-      cell.addEventListener('mouseenter', function() {
-        const benchmark = this.dataset.benchmark;
-        const instance = this.dataset.instance;
-        if (benchmark === 'all') return; // Skip "all" row as it has no beeswarm
-
-        // Highlight all 3 cells for this instance
-        highlightTableCells(benchmark, instance);
-
-        // Find and highlight only this instance's dots in the corresponding beeswarm
-        const svgCell = document.querySelector(`.benchmark-cell[data-benchmark="${benchmark}"]`);
-        if (svgCell) {
-          svgCell.classList.add('svg-highlight');
-          const svg = d3.select(svgCell);
-          svg.selectAll('.dot')
-            .classed('dimmed', dot => dot.instance !== instance)
-            .classed('highlighted', dot => dot.instance === instance);
-        }
-      });
-
-      cell.addEventListener('mouseleave', function() {
-        // Clear all highlights
-        clearTableHighlight();
-        d3.selectAll('.benchmark-cell').classed('svg-highlight', false);
-        d3.selectAll('.dot')
-          .classed('dimmed', false)
-          .classed('highlighted', false);
-      });
-    });
   </script>
 </body>
 </html>
