@@ -1,0 +1,884 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'json'
+require 'erb'
+require 'set'
+
+RESULTS_BASE = File.expand_path('../results', __dir__)
+# Use the most recent results directory
+RESULTS_DIR = Dir.glob(File.join(RESULTS_BASE, '*')).select { |f| File.directory?(f) }.max_by { |f| File.mtime(f) }
+OUTPUT_DIR = File.expand_path('public', __dir__)
+OUTPUT_FILE = File.join(OUTPUT_DIR, 'index.html')
+
+def parse_benchmark_file(file_path)
+  content = File.read(file_path)
+  benchmarks = {}
+
+  # Find architecture
+  arch_match = content.match(/ruby \d+\.\d+\.\d+ .* \[(\w+-linux)\]/)
+  architecture = arch_match ? arch_match[1] : 'unknown'
+
+  lines = content.lines
+  current_benchmark = nil
+  current_iterations = []
+  seen_benchmarks = Set.new
+
+  lines.each do |line|
+    # Match benchmark start
+    if match = line.match(/^Running benchmark "([^"]+)" \((\d+)\/67\)/)
+      benchmark_name = match[1]
+      benchmark_num = match[2].to_i
+
+      # Only process first run (stop if we see benchmark 1 again)
+      if benchmark_num == 1 && seen_benchmarks.include?(benchmark_name)
+        break
+      end
+
+      seen_benchmarks.add(benchmark_name)
+      current_benchmark = benchmark_name
+      current_iterations = []
+    end
+
+    # Match iteration line (e.g., " #1: 3355ms" or "#10:  267ms")
+    if match = line.match(/^\s*#(\d+):\s*(\d+)ms/)
+      current_iterations << match[2].to_i
+    end
+
+    # Match average line to determine non-warmup count
+    if match = line.match(/^Average of last (\d+), non-warmup iters: (\d+)ms/)
+      non_warmup_count = match[1].to_i
+      average = match[2].to_i
+
+      if current_benchmark && current_iterations.any?
+        # Take the last N iterations as non-warmup
+        non_warmup_iters = current_iterations.last(non_warmup_count)
+        benchmarks[current_benchmark] = {
+          iterations: non_warmup_iters,
+          average: average
+        }
+      end
+      current_benchmark = nil
+      current_iterations = []
+    end
+  end
+
+  { benchmarks: benchmarks, architecture: architecture }
+end
+
+def generate_html(data)
+  all_benchmarks = data.values.flat_map { |d| d[:benchmarks].keys }.uniq.sort
+  instance_names = data.keys.sort
+
+  # Build iteration data for D3 (sample to max 15 per instance per benchmark)
+  max_samples = 15
+  iteration_data = []
+  all_benchmarks.each do |benchmark|
+    instance_names.each do |instance|
+      bench_data = data[instance][:benchmarks][benchmark]
+      next unless bench_data
+
+      iters = bench_data[:iterations]
+      # Sample evenly if too many iterations
+      sampled = if iters.size > max_samples
+        step = iters.size.to_f / max_samples
+        max_samples.times.map { |i| iters[(i * step).to_i] }
+      else
+        iters
+      end
+
+      sampled.each_with_index do |time, idx|
+        iteration_data << {
+          benchmark: benchmark,
+          instance: instance,
+          time: time
+        }
+      end
+    end
+  end
+
+  # Build summary table data with 95% CI
+  table_data = all_benchmarks.map do |benchmark|
+    row = { name: benchmark }
+    instance_names.each do |instance|
+      bench_data = data[instance][:benchmarks][benchmark]
+      if bench_data
+        row[instance] = bench_data[:average]
+        # Calculate 95% CI
+        iters = bench_data[:iterations]
+        n = iters.size
+        if n > 1
+          mean = iters.sum.to_f / n
+          variance = iters.map { |x| (x - mean) ** 2 }.sum / (n - 1)
+          std_dev = Math.sqrt(variance)
+          ci_95 = 1.96 * (std_dev / Math.sqrt(n))
+          ci_percent = ((ci_95 / mean) * 100).round(1)
+          row[instance.to_s + "_ci"] = ci_percent
+        else
+          row[instance.to_s + "_ci"] = 0
+        end
+      else
+        row[instance] = nil
+        row[instance.to_s + "_ci"] = nil
+      end
+    end
+    row
+  end
+
+  # Calculate relative performance
+  table_data.each do |row|
+    times = instance_names.map { |i| row[i] }.compact
+    next if times.empty?
+    min_time = times.min
+
+    instance_names.each do |instance|
+      if row[instance]
+        row[instance.to_s + "_relative"] = ((row[instance].to_f / min_time - 1) * 100).round(1)
+      end
+    end
+  end
+
+  # Summary stats
+  summary = {}
+  instance_names.each do |instance|
+    times = table_data.map { |row| row[instance] }.compact
+    summary[instance] = {
+      total_time: times.sum,
+      benchmark_count: times.size,
+      architecture: data[instance][:architecture]
+    }
+  end
+
+  fastest_total = summary.values.map { |s| s[:total_time] }.min
+  summary.each do |instance, stats|
+    stats[:relative_to_fastest] = ((stats[:total_time].to_f / fastest_total - 1) * 100).round(1)
+  end
+
+  # Create "all" row for totals
+  all_row = { name: 'all', is_all: true }
+  instance_names.each do |instance|
+    all_row[instance] = summary[instance][:total_time]
+    all_row[instance.to_s + "_ci"] = nil  # No CI for totals
+    all_row[instance.to_s + "_relative"] = summary[instance][:relative_to_fastest]
+  end
+
+  html_template = <<~'HTML'
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Ruby Benchmark Results</title>
+      <script src="https://d3js.org/d3.v7.min.js"></script>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+          font-size: 12px;
+          line-height: 1.4;
+          color: #333;
+          padding: 20px;
+        }
+        h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+        h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px 0; color: #555; }
+        p.subtitle { font-size: 11px; color: #666; margin-bottom: 16px; }
+        .summary {
+          display: flex;
+          gap: 24px;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+        .summary-item { font-size: 11px; }
+        .summary-item strong { font-weight: 600; }
+        .summary-item .arch { color: #888; font-size: 10px; }
+        .summary-item .fastest { color: #2a2; }
+        .summary-item .slower { color: #888; }
+
+        .main-layout {
+          display: flex;
+          gap: 24px;
+          align-items: flex-start;
+        }
+        .left-column {
+          width: 570px;
+          flex-shrink: 0;
+        }
+        .right-column {
+          flex: 1;
+          min-width: 0;
+        }
+
+        @media (max-width: 999px) {
+          .main-layout {
+            flex-direction: column;
+          }
+          .left-column {
+            width: 100%;
+          }
+          .right-column {
+            width: 100%;
+          }
+          .benchmark-cell {
+            width: 125px;
+            height: auto;
+          }
+        }
+
+        #beeswarm-matrix {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 2px;
+        }
+        .benchmark-cell {
+          display: block;
+        }
+        .benchmark-cell.svg-highlight {
+          background: #fff3cd;
+        }
+        .benchmark-label {
+          font-size: 8px;
+          fill: #666;
+          text-anchor: middle;
+        }
+        .dot {
+          stroke: none;
+          opacity: 0.7;
+          cursor: pointer;
+        }
+        .dot.dimmed { opacity: 0.1; }
+        .dot.highlighted { opacity: 1; stroke: #333; stroke-width: 0.5px; }
+        .axis text { font-size: 7px; fill: #999; }
+
+        .instance-legend {
+          display: flex;
+          gap: 12px;
+          margin-bottom: 8px;
+          font-size: 10px;
+        }
+        .instance-legend span {
+          display: flex;
+          align-items: center;
+          gap: 3px;
+        }
+        .instance-legend .swatch {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+        }
+
+        .table-container {
+          overflow-x: auto;
+        }
+        table {
+          min-width: 100%;
+          border-collapse: collapse;
+          font-size: 10px;
+        }
+        th, td {
+          padding: 3px 6px;
+          text-align: left;
+          border-bottom: 1px solid #eee;
+        }
+        th {
+          font-weight: 600;
+          color: #555;
+          border-bottom: 2px solid #ddd;
+          position: sticky;
+          top: 0;
+          background: white;
+        }
+        .time-cell {
+          font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+          text-align: right;
+          font-size: 9px;
+          padding: 3px 4px;
+        }
+        .instance-cell.table-highlight { background: #fff3cd !important; }
+        .ci-cell {
+          font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+          text-align: right;
+          font-size: 8px;
+          color: #999;
+          padding: 3px 4px;
+        }
+        .rel-cell {
+          font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+          text-align: right;
+          font-size: 8px;
+          font-weight: 500;
+          padding: 3px 4px;
+        }
+        .na { color: #ccc; }
+        tr.all-row td {
+          background: #f0f4f8;
+          font-weight: 600;
+        }
+        tr.all-row td.time-cell,
+        tr.all-row td.ci-cell,
+        tr.all-row td.rel-cell {
+          background: #f0f4f8;
+        }
+        .benchmark-name {
+          cursor: pointer;
+        }
+        .benchmark-name:hover {
+          background: #f0f0f0;
+        }
+        tr.all-row .benchmark-name:hover {
+          background: #e0e4e8;
+        }
+        .instance-cell {
+          cursor: pointer;
+        }
+        th.instance-group {
+          text-align: center;
+          border-bottom: 1px solid #ddd;
+        }
+        th.sub-header {
+          font-size: 8px;
+          font-weight: 500;
+          color: #888;
+          padding: 2px 4px;
+          text-align: right;
+        }
+        .col-divider {
+          border-left: 1px solid #ddd;
+        }
+
+        .color-legend {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 9px;
+          color: #666;
+          margin-top: 8px;
+        }
+        .color-legend-bar {
+          width: 100px;
+          height: 8px;
+          border-radius: 2px;
+        }
+
+        #filter {
+          padding: 3px 6px;
+          border: 1px solid #ddd;
+          border-radius: 3px;
+          font-size: 10px;
+          width: 100%;
+          margin-bottom: 6px;
+        }
+
+        .tooltip {
+          position: absolute;
+          background: rgba(0,0,0,0.85);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 3px;
+          font-size: 10px;
+          pointer-events: none;
+          z-index: 100;
+        }
+
+        .summary-beeswarm {
+          width: 100%;
+          margin-bottom: 16px;
+        }
+        .summary-beeswarm svg {
+          width: 100%;
+          display: block;
+        }
+        .mobile-legend {
+          display: none;
+          gap: 12px;
+          margin-bottom: 8px;
+          font-size: 10px;
+        }
+        .mobile-legend span {
+          display: flex;
+          align-items: center;
+          gap: 3px;
+        }
+        .mobile-legend .swatch {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+        }
+        @media (max-width: 999px) {
+          .mobile-legend {
+            display: flex;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Ruby Benchmark Results</h1>
+      <p class="subtitle">Comparing iteration times across 4 AWS instance types. Each dot is one non-warmup iteration.</p>
+
+      <div class="mobile-legend" id="mobile-legend"></div>
+      <div class="summary-beeswarm" id="summary-beeswarm"></div>
+
+      <div class="main-layout">
+        <div class="left-column">
+          <h2>Summary Table</h2>
+          <input type="text" id="filter" placeholder="Filter benchmarks...">
+          <div class="color-legend">
+            <span>0%</span>
+            <div class="color-legend-bar" id="color-legend-bar"></div>
+            <span>300%+</span>
+            <span style="margin-left: 8px; color: #999;">(% slower than fastest)</span>
+          </div>
+          <div class="table-container">
+            <table id="results-table">
+              <thead>
+                <tr>
+                  <th rowspan="2">Benchmark</th>
+                  <% instance_names.each do |instance| %>
+                  <th colspan="3" class="instance-group col-divider"><%= instance %></th>
+                  <% end %>
+                </tr>
+                <tr>
+                  <% instance_names.each do |instance| %>
+                  <th class="sub-header col-divider">ms</th>
+                  <th class="sub-header">±%</th>
+                  <th class="sub-header">vs best</th>
+                  <% end %>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="all-row" data-name="all" data-benchmark="all">
+                  <td class="benchmark-name">all</td>
+                  <% instance_names.each do |instance| %>
+                  <%
+                    time = all_row[instance]
+                    relative = all_row[instance.to_s + "_relative"] || 0
+                  %>
+                  <td class="time-cell col-divider instance-cell" data-instance="<%= instance %>" data-benchmark="all">
+                    <%= time %>
+                  </td>
+                  <td class="ci-cell instance-cell" data-instance="<%= instance %>" data-benchmark="all"></td>
+                  <td class="rel-cell instance-cell" data-instance="<%= instance %>" data-benchmark="all" data-relative="<%= relative %>">
+                    <% if relative > 0 %>+<%= relative %>%<% end %>
+                  </td>
+                  <% end %>
+                </tr>
+                <% table_data.each do |row| %>
+                <%
+                  times = instance_names.map { |i| row[i] }.compact
+                  min_time = times.min
+                %>
+                <tr data-name="<%= row[:name].downcase %>" data-benchmark="<%= row[:name] %>">
+                  <td class="benchmark-name"><%= row[:name] %></td>
+                  <% instance_names.each do |instance| %>
+                  <%
+                    time = row[instance]
+                    relative = row[instance.to_s + "_relative"] || 0
+                    ci = row[instance.to_s + "_ci"]
+                  %>
+                  <td class="time-cell col-divider instance-cell" data-instance="<%= instance %>" data-benchmark="<%= row[:name] %>">
+                    <% if time %><%= time %><% else %><span class="na">—</span><% end %>
+                  </td>
+                  <td class="ci-cell instance-cell" data-instance="<%= instance %>" data-benchmark="<%= row[:name] %>">
+                    <% if ci && ci > 0 %>±<%= ci %><% end %>
+                  </td>
+                  <td class="rel-cell instance-cell" data-instance="<%= instance %>" data-benchmark="<%= row[:name] %>" data-relative="<%= relative %>">
+                    <% if time && relative > 0 %>+<%= relative %>%<% end %>
+                  </td>
+                  <% end %>
+                </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="right-column">
+          <h2>Iteration Distribution</h2>
+          <div class="instance-legend" id="legend"></div>
+          <div id="beeswarm-matrix"></div>
+        </div>
+      </div>
+
+      <div class="tooltip" id="tooltip" style="display:none"></div>
+
+      <script>
+        const data = <%= iteration_data.to_json %>;
+        const instances = <%= instance_names.to_json %>;
+        const benchmarks = <%= all_benchmarks.to_json %>;
+
+        const colors = {
+          '<%= instance_names[0] %>': '#4e79a7',
+          '<%= instance_names[1] %>': '#f28e2c',
+          '<%= instance_names[2] %>': '#e15759',
+          '<%= instance_names[3] %>': '#76b7b2'
+        };
+
+        // Build legend with hover to highlight all instance datapoints
+        const legend = d3.select('#legend');
+        const mobileLegend = d3.select('#mobile-legend');
+
+        function highlightInstance(inst) {
+          // Highlight in summary chart
+          d3.selectAll('.summary-line')
+            .attr('opacity', d => d.instance === inst ? 1 : 0.05)
+            .attr('stroke-width', d => d.instance === inst ? 2 : 1);
+          // Highlight in beeswarm matrix
+          d3.selectAll('.benchmark-cell .dot')
+            .classed('dimmed', d => d.instance !== inst)
+            .classed('highlighted', d => d.instance === inst);
+        }
+
+        function clearInstanceHighlight() {
+          d3.selectAll('.summary-line')
+            .attr('opacity', 0.3)
+            .attr('stroke-width', 1);
+          d3.selectAll('.benchmark-cell .dot')
+            .classed('dimmed', false)
+            .classed('highlighted', false);
+        }
+
+        instances.forEach(inst => {
+          const legendSpan = legend.append('span')
+            .style('cursor', 'pointer')
+            .html(`<span class="swatch" style="background:${colors[inst]}"></span>${inst}`)
+            .on('mouseenter', () => highlightInstance(inst))
+            .on('mouseleave', clearInstanceHighlight);
+          const mobileSpan = mobileLegend.append('span')
+            .style('cursor', 'pointer')
+            .html(`<span class="swatch" style="background:${colors[inst]}"></span>${inst}`)
+            .on('mouseenter', () => highlightInstance(inst))
+            .on('mouseleave', clearInstanceHighlight);
+        });
+
+        const tooltip = d3.select('#tooltip');
+
+        // Summary chart - vertical lines for each benchmark/instance average as % relative to fastest
+        {
+          const summaryContainer = d3.select('#summary-beeswarm');
+          const summaryWidth = summaryContainer.node().getBoundingClientRect().width || 800;
+          const summaryHeight = 62;
+
+          // Calculate average per benchmark/instance, then relative % to fastest average per benchmark
+          const byBench = d3.group(data, d => d.benchmark);
+          const avgData = [];
+          byBench.forEach((points, benchmark) => {
+            const byInstance = d3.group(points, d => d.instance);
+            const instanceAvgs = [];
+            byInstance.forEach((instPoints, instance) => {
+              const avg = d3.mean(instPoints, d => d.time);
+              instanceAvgs.push({ instance, avg });
+            });
+            const minAvg = d3.min(instanceAvgs, d => d.avg);
+            instanceAvgs.forEach(({ instance, avg }) => {
+              avgData.push({
+                benchmark,
+                instance,
+                avgTime: Math.round(avg),
+                relativePercent: ((avg / minAvg) - 1) * 100
+              });
+            });
+          });
+
+          const maxRelative = d3.max(avgData, d => d.relativePercent);
+
+          const svg = summaryContainer.append('svg')
+            .attr('width', summaryWidth)
+            .attr('height', summaryHeight)
+            .attr('viewBox', `0 0 ${summaryWidth} ${summaryHeight}`)
+            .attr('preserveAspectRatio', 'xMidYMid meet');
+
+          const x = d3.scaleLinear()
+            .domain([0, maxRelative])
+            .range([5, summaryWidth - 5]);
+
+          // Axis
+          const axisG = svg.append('g')
+            .attr('class', 'axis')
+            .attr('transform', `translate(0,${summaryHeight - 8})`);
+          const ticks = x.ticks(10);
+          axisG.selectAll('text')
+            .data(ticks)
+            .enter().append('text')
+            .attr('x', d => x(d))
+            .attr('y', 7)
+            .attr('text-anchor', 'middle')
+            .text(d => d + '%');
+
+          // Vertical lines
+          svg.selectAll('.summary-line')
+            .data(avgData)
+            .enter().append('line')
+            .attr('class', 'summary-line')
+            .attr('x1', d => x(d.relativePercent))
+            .attr('x2', d => x(d.relativePercent))
+            .attr('y1', 4)
+            .attr('y2', summaryHeight - 12)
+            .attr('stroke', d => colors[d.instance])
+            .attr('stroke-width', 1)
+            .attr('opacity', 0.3)
+            .on('mouseenter', function(event, d) {
+              d3.select(this).attr('opacity', 1).attr('stroke-width', 2);
+              tooltip.style('display', 'block')
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 10) + 'px')
+                .html(`${d.instance}: ${d.avgTime}ms (+${d.relativePercent.toFixed(1)}%)<br><em>${d.benchmark}</em>`);
+            })
+            .on('mouseleave', function() {
+              d3.select(this).attr('opacity', 0.3).attr('stroke-width', 1);
+              tooltip.style('display', 'none');
+            });
+        }
+
+        // Beeswarm parameters
+        const cellWidth = 150;
+        const cellHeight = 62;
+        const cellPadding = 5;
+
+        const container = d3.select('#beeswarm-matrix');
+
+        // Group data by benchmark
+        const byBenchmark = d3.group(data, d => d.benchmark);
+
+        benchmarks.forEach((benchmark, i) => {
+          const benchData = byBenchmark.get(benchmark) || [];
+          if (benchData.length === 0) return;
+
+          const svg = container.append('svg')
+            .attr('class', 'benchmark-cell')
+            .attr('data-benchmark', benchmark)
+            .attr('width', cellWidth)
+            .attr('height', cellHeight)
+            .attr('viewBox', `0 0 ${cellWidth} ${cellHeight}`)
+            .attr('preserveAspectRatio', 'xMidYMid meet');
+
+          // X scale for time - start at min value, add padding only on right
+          const times = benchData.map(d => d.time);
+          const xExtent = d3.extent(times);
+          const xPadding = (xExtent[1] - xExtent[0]) * 0.1 || 10;
+          const x = d3.scaleLinear()
+            .domain([xExtent[0], xExtent[1] + xPadding])
+            .range([cellPadding + 3, cellWidth - cellPadding]);
+
+          const radius = 3;
+          const centerY = cellHeight / 2 + 3;
+
+          // Simple dodge: sort by x, stack vertically when overlapping
+          const sorted = [...benchData].sort((a, b) => a.time - b.time);
+          const positions = [];
+          sorted.forEach(d => {
+            const px = x(d.time);
+            // Find non-overlapping y position
+            let py = centerY;
+            let dir = 1;
+            let offset = 0;
+            while (positions.some(p => Math.abs(p.x - px) < radius * 2 && Math.abs(p.y - py) < radius * 2)) {
+              offset += radius * 2;
+              py = centerY + offset * dir;
+              dir *= -1;
+              if (offset > 25) break;
+            }
+            d.px = px;
+            d.py = Math.max(16, Math.min(cellHeight - 16, py));
+            positions.push({x: px, y: d.py});
+          });
+
+          // Axis
+          const axisG = svg.append('g')
+            .attr('class', 'axis')
+            .attr('transform', `translate(0,${cellHeight - 12})`);
+
+          const ticks = x.ticks(3);
+          axisG.selectAll('text')
+            .data(ticks)
+            .enter().append('text')
+            .attr('x', d => x(d))
+            .attr('y', 8)
+            .attr('text-anchor', 'middle')
+            .text(d => d >= 1000 ? (d/1000).toFixed(1) + 's' : d + 'ms');
+
+          // Benchmark label
+          svg.append('text')
+            .attr('class', 'benchmark-label')
+            .attr('x', cellWidth / 2)
+            .attr('y', 11)
+            .text(benchmark.length > 22 ? benchmark.slice(0, 20) + '…' : benchmark);
+
+          // Dots
+          svg.selectAll('.dot')
+            .data(benchData)
+            .enter().append('circle')
+            .attr('class', 'dot')
+            .attr('data-instance', d => d.instance)
+            .attr('data-benchmark', benchmark)
+            .attr('cx', d => d.px)
+            .attr('cy', d => d.py)
+            .attr('r', radius)
+            .attr('fill', d => colors[d.instance])
+            .on('mouseenter', function(event, d) {
+              const parentSvg = this.parentNode;
+              // Highlight only dots of same instance within this beeswarm
+              d3.select(parentSvg).selectAll('.dot')
+                .classed('dimmed', dot => dot.instance !== d.instance)
+                .classed('highlighted', dot => dot.instance === d.instance);
+              // Highlight corresponding table cells
+              highlightTableCells(d.benchmark, d.instance);
+              // Show tooltip
+              tooltip.style('display', 'block')
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 10) + 'px')
+                .html(`${d.instance}: ${d.time}ms`);
+            })
+            .on('mouseleave', function() {
+              const parentSvg = this.parentNode;
+              d3.select(parentSvg).selectAll('.dot')
+                .classed('dimmed', false)
+                .classed('highlighted', false);
+              clearTableHighlight();
+              tooltip.style('display', 'none');
+            });
+        });
+
+        function highlightTableCells(benchmark, instance) {
+          // Find and highlight all 3 cells for this instance/benchmark
+          const cells = document.querySelectorAll(
+            `td.instance-cell[data-benchmark="${benchmark}"][data-instance="${instance}"]`
+          );
+          cells.forEach(cell => {
+            cell.classList.add('table-highlight');
+          });
+        }
+
+        function clearTableHighlight() {
+          document.querySelectorAll('.table-highlight').forEach(el => {
+            el.classList.remove('table-highlight');
+          });
+        }
+
+        // Color scale for relative percentages (green = 0%, red = 300%+)
+        const colorScale = d3.scaleLinear()
+          .domain([0, 50, 150, 300])
+          .range(['#22863a', '#6a9f3d', '#d9822b', '#cb2431'])
+          .clamp(true);
+
+        // Apply colors to relative percentages
+        document.querySelectorAll('.rel-cell[data-relative]').forEach(el => {
+          const rel = parseFloat(el.dataset.relative);
+          if (rel > 0) {
+            el.style.color = colorScale(rel);
+          } else if (el.textContent.trim() === '') {
+            // Leave empty cells unstyled
+          } else {
+            el.style.color = '#22863a'; // Green for 0% (fastest)
+          }
+        });
+
+        // Create gradient for legend bar
+        const legendBar = document.getElementById('color-legend-bar');
+        const gradientStops = [0, 50, 150, 300].map(v => colorScale(v));
+        legendBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+
+        // Table and beeswarm filter
+        const filterInput = document.getElementById('filter');
+        const tableRows = document.querySelectorAll('#results-table tbody tr');
+        const beeswarmCells = document.querySelectorAll('.benchmark-cell');
+        filterInput.addEventListener('input', function() {
+          const filter = this.value.toLowerCase();
+          tableRows.forEach(row => {
+            row.style.display = row.dataset.name.includes(filter) ? '' : 'none';
+          });
+          beeswarmCells.forEach(cell => {
+            const benchmark = cell.dataset.benchmark.toLowerCase();
+            cell.style.display = benchmark.includes(filter) ? '' : 'none';
+          });
+        });
+
+        // Benchmark name hover -> highlight entire beeswarm
+        document.querySelectorAll('.benchmark-name').forEach(cell => {
+          cell.addEventListener('mouseenter', function() {
+            const row = this.closest('tr');
+            const benchmark = row.dataset.benchmark;
+            if (benchmark === 'all') return; // Skip "all" row as it has no beeswarm
+
+            // Find and highlight the corresponding beeswarm
+            const svgCell = document.querySelector(`.benchmark-cell[data-benchmark="${benchmark}"]`);
+            if (svgCell) {
+              svgCell.classList.add('svg-highlight');
+              d3.select(svgCell).selectAll('.dot').classed('highlighted', true);
+            }
+          });
+
+          cell.addEventListener('mouseleave', function() {
+            // Clear all beeswarm highlights
+            d3.selectAll('.benchmark-cell').classed('svg-highlight', false);
+            d3.selectAll('.dot')
+              .classed('dimmed', false)
+              .classed('highlighted', false);
+          });
+        });
+
+        // Instance cell hover -> highlight just that instance in the beeswarm
+        document.querySelectorAll('.instance-cell').forEach(cell => {
+          cell.addEventListener('mouseenter', function() {
+            const benchmark = this.dataset.benchmark;
+            const instance = this.dataset.instance;
+            if (benchmark === 'all') return; // Skip "all" row as it has no beeswarm
+
+            // Highlight all 3 cells for this instance
+            highlightTableCells(benchmark, instance);
+
+            // Find and highlight only this instance's dots in the corresponding beeswarm
+            const svgCell = document.querySelector(`.benchmark-cell[data-benchmark="${benchmark}"]`);
+            if (svgCell) {
+              svgCell.classList.add('svg-highlight');
+              const svg = d3.select(svgCell);
+              svg.selectAll('.dot')
+                .classed('dimmed', dot => dot.instance !== instance)
+                .classed('highlighted', dot => dot.instance === instance);
+            }
+          });
+
+          cell.addEventListener('mouseleave', function() {
+            // Clear all highlights
+            clearTableHighlight();
+            d3.selectAll('.benchmark-cell').classed('svg-highlight', false);
+            d3.selectAll('.dot')
+              .classed('dimmed', false)
+              .classed('highlighted', false);
+          });
+        });
+      </script>
+    </body>
+    </html>
+  HTML
+
+  ERB.new(html_template).result(binding)
+end
+
+# Main
+require 'fileutils'
+
+abort "No results directory found in #{RESULTS_BASE}" unless RESULTS_DIR
+puts "Using results from: #{RESULTS_DIR}"
+puts "Parsing benchmark results..."
+
+FileUtils.mkdir_p(OUTPUT_DIR)
+
+instance_dirs = Dir.glob(File.join(RESULTS_DIR, '*')).select { |f| File.directory?(f) }
+data = {}
+
+instance_dirs.each do |dir|
+  instance_name = File.basename(dir)
+  output_file = File.join(dir, 'output.txt')
+  next unless File.exist?(output_file)
+
+  puts "  Parsing #{instance_name}..."
+  data[instance_name] = parse_benchmark_file(output_file)
+
+  total_iters = data[instance_name][:benchmarks].values.sum { |b| b[:iterations].size }
+  puts "    Found #{data[instance_name][:benchmarks].size} benchmarks, #{total_iters} iterations"
+end
+
+puts "\nGenerating HTML report..."
+html = generate_html(data)
+File.write(OUTPUT_FILE, html)
+
+puts "Report generated: #{OUTPUT_FILE}"

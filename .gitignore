@@ -1,0 +1,33 @@
+# Environment and secrets
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Local config
+mise.local.toml
+
+# Terraform - Benchmark infrastructure (AWS)
+bench/terraform/.terraform/
+bench/terraform/terraform.tfstate
+bench/terraform/terraform.tfstate.backup
+bench/terraform/*.tfvars
+bench/terraform/*.tfvars.json
+bench/terraform/bench-key.pem
+
+# Terraform - Site infrastructure (Cloudflare)
+site/terraform/.terraform/
+site/terraform/terraform.tfstate
+site/terraform/terraform.tfstate.backup
+site/terraform/*.tfvars
+site/terraform/*.tfvars.json
+
+# Generated site output
+site/public/
+
+# Status file
+status.json

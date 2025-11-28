@@ -1,0 +1,6 @@
+[tools]
+terraform = "1.9"
+ruby = "3.4"
+
+[env]
+_.file = ".env"
