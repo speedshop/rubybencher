@@ -166,9 +166,9 @@ locals {
   EOF
 }
 
-# Instance configurations
+# Instance type configurations
 locals {
-  instances = {
+  instance_types = {
     "c8g.medium" = {
       instance_type = "c8g.medium"
       ami           = data.aws_ami.al2023_arm.id
@@ -190,6 +190,19 @@ locals {
       arch          = "x86_64"
     }
   }
+
+  # Create N replicas of each instance type
+  instances = merge([
+    for type_name, config in local.instance_types : {
+      for i in range(1, var.replicas + 1) : "${type_name}-${i}" => {
+        instance_type = config.instance_type
+        ami           = config.ami
+        arch          = config.arch
+        type_name     = type_name
+        replica       = i
+      }
+    }
+  ]...)
 }
 
 # EC2 Instances

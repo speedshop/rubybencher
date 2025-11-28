@@ -4,6 +4,47 @@ set SCRIPT_DIR (dirname (status filename))
 set BENCH_SCRIPT "$SCRIPT_DIR/bench/bench.rb"
 set STATUS_FILE "$SCRIPT_DIR/status.json"
 set LOG_FILE "$SCRIPT_DIR/bench.log"
+set -g NONINTERACTIVE false
+
+# Parse global flags
+function parse_flags
+    set -g ARGS
+    for arg in $argv
+        switch $arg
+            case -y --yes
+                set -g NONINTERACTIVE true
+            case '*'
+                set -g ARGS $ARGS $arg
+        end
+    end
+end
+
+# Confirm helper - auto-accepts in non-interactive mode
+function confirm
+    if test "$NONINTERACTIVE" = "true"
+        return 0
+    end
+    gum confirm $argv
+end
+
+# Spin helper - skips spinner in non-interactive mode
+function spin
+    if test "$NONINTERACTIVE" = "true"
+        # Find the command after "--"
+        set -l cmd_started false
+        set -l cmd
+        for arg in $argv
+            if test "$cmd_started" = "true"
+                set cmd $cmd $arg
+            else if test "$arg" = "--"
+                set cmd_started true
+            end
+        end
+        eval $cmd
+    else
+        gum spin $argv
+    end
+end
 
 function phase_to_description
     switch $argv[1]
@@ -62,30 +103,10 @@ function show_status
     end
 
     set phase (jq -r '.phase // "unknown"' $STATUS_FILE)
-    set current_run (jq -r '.current_run // 0' $STATUS_FILE)
-    set total_runs (jq -r '.total_runs // 3' $STATUS_FILE)
     set updated_at (jq -r '.updated_at // ""' $STATUS_FILE)
 
     # Header
     set header (gum style --bold --foreground 212 "Railsbencher")
-
-    # Progress
-    if test "$current_run" != "0" -a "$current_run" != "null"
-        set progress_text "Run $current_run of $total_runs"
-        set progress_bar ""
-        for i in (seq 1 $total_runs)
-            if test $i -lt $current_run
-                set progress_bar "$progress_bar●"
-            else if test $i -eq $current_run
-                set progress_bar "$progress_bar◉"
-            else
-                set progress_bar "$progress_bar○"
-            end
-        end
-        set progress (gum style --foreground 39 "$progress_bar  $progress_text")
-    else
-        set progress ""
-    end
 
     # Phase
     set phase_desc (phase_to_description $phase)
@@ -100,28 +121,35 @@ function show_status
             set phase_style (gum style --foreground 245 "→ $phase_desc")
     end
 
-    # Instance status
+    # Instance status - group by instance type
     set instances_json (jq -r '.instance_status // {}' $STATUS_FILE)
     set instance_lines ""
     if test "$instances_json" != "{}" -a "$instances_json" != "null"
-        set instance_types (echo $instances_json | jq -r 'keys[]' 2>/dev/null)
-        for instance_type in $instance_types
-            # Handle both old format (string) and new format (object with status/benchmark/progress)
-            set status_raw (echo $instances_json | jq -r ".[\"$instance_type\"]")
-            if echo $status_raw | jq -e 'type == "object"' >/dev/null 2>&1
-                set inst_status (echo $instances_json | jq -r ".[\"$instance_type\"].status // \"unknown\"")
-                set benchmark (echo $instances_json | jq -r ".[\"$instance_type\"].benchmark // empty")
-                set progress (echo $instances_json | jq -r ".[\"$instance_type\"].progress // empty")
-            else
-                set inst_status $status_raw
-                set benchmark ""
-                set progress ""
+        # Get unique instance types (e.g., c6g.medium from c6g.medium-1)
+        set instance_keys (echo $instances_json | jq -r 'keys[]' 2>/dev/null | sort)
+        set current_type ""
+        for instance_key in $instance_keys
+            # Extract type from key (e.g., "c6g.medium" from "c6g.medium-1")
+            set inst_type (echo $instance_key | sed 's/-[0-9]*$//')
+
+            # Add type header if new type
+            if test "$inst_type" != "$current_type"
+                set current_type $inst_type
+                set instance_lines "$instance_lines\n  $inst_type:"
             end
+
+            # Get status info
+            set inst_status (echo $instances_json | jq -r ".[\"$instance_key\"].status // \"unknown\"")
+            set progress_val (echo $instances_json | jq -r ".[\"$instance_key\"].progress // empty")
             set icon (instance_status_icon $inst_status)
-            if test -n "$progress" -a "$progress" != "null"
-                set instance_lines "$instance_lines\n  $icon $instance_type ($progress)"
+
+            # Extract replica number
+            set replica (echo $instance_key | sed 's/.*-//')
+
+            if test -n "$progress_val" -a "$progress_val" != "null"
+                set instance_lines "$instance_lines\n    $icon #$replica ($progress_val)"
             else
-                set instance_lines "$instance_lines\n  $icon $instance_type"
+                set instance_lines "$instance_lines\n    $icon #$replica"
             end
         end
     end
@@ -130,10 +158,6 @@ function show_status
     clear
     echo
     echo $header
-    if test -n "$progress"
-        echo
-        echo $progress
-    end
     echo
     echo $phase_style
 
@@ -162,17 +186,17 @@ function show_status
         case complete
             echo
             set results_path (jq -r '.results_path // ""' $STATUS_FILE)
-            set successful_runs (jq -r '.successful_runs | length' $STATUS_FILE)
-            gum style --foreground 82 "All $successful_runs runs completed successfully!"
+            set successful_count (jq -r '.successful | length' $STATUS_FILE)
+            gum style --foreground 82 "All $successful_count instances completed successfully!"
             if test -n "$results_path" -a "$results_path" != "null"
                 gum style --foreground 245 "Results: $results_path"
             end
             return 0
         case failed
             echo
-            set failed_count (jq -r '.failed_runs | length' $STATUS_FILE)
-            set successful_count (jq -r '.successful_runs | length' $STATUS_FILE)
-            gum style --foreground 196 "Benchmark failed: $failed_count run(s) failed, $successful_count succeeded"
+            set failed_count (jq -r '.failed | length' $STATUS_FILE)
+            set successful_count (jq -r '.successful | length' $STATUS_FILE)
+            gum style --foreground 196 "Benchmark failed: $failed_count instance(s) failed, $successful_count succeeded"
             return 2
     end
 
@@ -180,7 +204,7 @@ function show_status
 end
 
 function monitor_benchmark
-    gum spin --spinner dot --title "Starting benchmark monitor..." -- sleep 1
+    spin --spinner dot --title "Starting benchmark monitor..." -- sleep 1
 
     while true
         show_status
@@ -191,8 +215,10 @@ function monitor_benchmark
             break
         else if test $status_code -eq 2
             # Failed (status file says failed)
-            if gum confirm "View log file?"
-                less $LOG_FILE
+            if test "$NONINTERACTIVE" != "true"
+                if confirm "View log file?"
+                    less $LOG_FILE
+                end
             end
             break
         end
@@ -209,8 +235,10 @@ function monitor_benchmark
                 tail -20 $LOG_FILE 2>/dev/null | grep -E "(Error|error|failed|Failed|denied|Denied)" | tail -5
                 echo
                 gum style --foreground 245 "Run './run_benchmark.fish nuke' to clean up, then retry."
-                if gum confirm "View full log?"
-                    less $LOG_FILE
+                if test "$NONINTERACTIVE" != "true"
+                    if confirm "View full log?"
+                        less $LOG_FILE
+                    end
                 end
                 break
             end
@@ -229,15 +257,16 @@ function start_benchmark
         exit 1
     end
 
-    # Confirm start
-    set total_runs 3
-    gum style --foreground 245 "This will run the benchmark suite $total_runs times,"
-    gum style --foreground 245 "creating and destroying EC2 instances each time."
-    echo
+    # Confirm start (skip in non-interactive mode)
+    if test "$NONINTERACTIVE" != "true"
+        gum style --foreground 245 "This will create 12 EC2 instances (3 replicas x 4 types)"
+        gum style --foreground 245 "and run the benchmark suite on each in parallel."
+        echo
 
-    if not gum confirm "Start benchmark?"
-        gum log --level info "Cancelled"
-        exit 0
+        if not confirm "Start benchmark?"
+            gum log --level info "Cancelled"
+            exit 0
+        end
     end
 
     echo
@@ -268,13 +297,13 @@ function nuke_aws_resources
     # Try terraform destroy first if state exists
     if test -f "$terraform_dir/terraform.tfstate"
         gum log --level info "Found Terraform state, running terraform destroy..."
-        gum spin --spinner dot --title "Running terraform destroy..." -- sh -c "cd $terraform_dir && terraform destroy -auto-approve > /dev/null 2>&1"
+        spin --spinner dot --title "Running terraform destroy..." -- sh -c "cd $terraform_dir && terraform destroy -auto-approve > /dev/null 2>&1"
         rm -f "$terraform_dir/terraform.tfstate" "$terraform_dir/terraform.tfstate.backup" "$terraform_dir/bench-key.pem" 2>/dev/null
         gum log --level info "Terraform destroy complete, scanning for orphaned resources..."
     end
 
     # Find instances
-    gum spin --spinner dot --title "Finding EC2 instances..." -- sleep 1
+    spin --spinner dot --title "Finding EC2 instances..." -- sleep 1
     set instances (aws ec2 describe-instances \
         --region $region \
         --filters "Name=tag:Name,Values=ruby-bench-*" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
@@ -322,7 +351,7 @@ function nuke_aws_resources
     end
 
     echo
-    if not gum confirm --default=false "Delete all these resources?"
+    if not confirm --default=false "Delete all these resources?"
         gum log --level info "Cancelled"
         return 0
     end
@@ -334,7 +363,7 @@ function nuke_aws_resources
         gum log --level info "Terminating instances..."
         aws ec2 terminate-instances --region $region --instance-ids $instances > /dev/null 2>&1
 
-        gum spin --spinner dot --title "Waiting for instances to terminate..." -- \
+        spin --spinner dot --title "Waiting for instances to terminate..." -- \
             aws ec2 wait instance-terminated --region $region --instance-ids $instances 2>/dev/null
         gum log --level info "Instances terminated"
     end
@@ -424,7 +453,7 @@ function stop_benchmark
         gum log --level warn "No benchmark process found running"
     else
         gum log --level info "Found benchmark process(es): $bench_pids"
-        if gum confirm "Kill benchmark process(es)?"
+        if confirm "Kill benchmark process(es)?"
             for pid in $bench_pids
                 kill $pid 2>/dev/null && gum log --level info "Killed process $pid"
             end
@@ -438,8 +467,8 @@ function stop_benchmark
         if test "$instance_count" -gt 0
             echo
             gum log --level warn "Found $instance_count EC2 instance(s) still running"
-            if gum confirm "Destroy Terraform infrastructure?"
-                gum spin --spinner dot --title "Destroying infrastructure..." -- sh -c "cd $terraform_dir && terraform destroy -auto-approve > /dev/null 2>&1"
+            if confirm "Destroy Terraform infrastructure?"
+                spin --spinner dot --title "Destroying infrastructure..." -- sh -c "cd $terraform_dir && terraform destroy -auto-approve > /dev/null 2>&1"
                 if test $status -eq 0
                     gum log --level info "Infrastructure destroyed"
                 else
@@ -459,7 +488,7 @@ end
 function show_help
     gum style --bold --foreground 212 "Railsbencher"
     echo
-    gum style "Usage: run_benchmark.fish [command]"
+    gum style "Usage: run_benchmark.fish [-y|--yes] [command]"
     echo
     gum style --bold "Commands:"
     echo "  start    Start the benchmark and monitor progress"
@@ -469,14 +498,20 @@ function show_help
     echo "  status   Show current status once and exit"
     echo "  help     Show this help message"
     echo
+    gum style --bold "Options:"
+    echo "  -y, --yes  Non-interactive mode (auto-confirm all prompts)"
+    echo
     gum style --bold "Examples:"
     echo "  ./run_benchmark.fish start"
-    echo "  ./run_benchmark.fish monitor"
-    echo "  ./run_benchmark.fish nuke"
+    echo "  ./run_benchmark.fish -y start"
+    echo "  ./run_benchmark.fish --yes nuke"
 end
 
 # Main
-switch $argv[1]
+parse_flags $argv
+set cmd $ARGS[1]
+
+switch $cmd
     case start
         start_benchmark
     case monitor
@@ -490,6 +525,11 @@ switch $argv[1]
     case help --help -h
         show_help
     case ''
+        if test "$NONINTERACTIVE" = "true"
+            gum log --level error "Command required in non-interactive mode"
+            show_help
+            exit 1
+        end
         # Default: ask what to do
         set choice (gum choose "Start new benchmark" "Monitor running benchmark" "Stop benchmark" "Nuke AWS resources" "Show status" "Help")
         switch $choice
@@ -507,7 +547,7 @@ switch $argv[1]
                 show_help
         end
     case '*'
-        gum log --level error "Unknown command: $argv[1]"
+        gum log --level error "Unknown command: $cmd"
         show_help
         exit 1
 end

@@ -21,3 +21,9 @@ variable "budget_limit" {
   type        = number
   default     = null
 }
+
+variable "replicas" {
+  description = "Number of instances per instance type (for reducing variance)"
+  type        = number
+  default     = 3
+}
