@@ -172,6 +172,7 @@ class BenchmarkOrchestrator
     ssh_command(ip, "mkdir -p ~/results")
 
     # Write benchmark script to remote using base64 (avoids all quoting issues)
+    # Note: nodejs is required for shipit benchmark (uses CoffeeScript/Sprockets)
     benchmark_script = <<~'SCRIPT'
       #!/bin/bash
       docker run --rm \
@@ -179,6 +180,7 @@ class BenchmarkOrchestrator
         -v ~/results:/results \
         ruby:3.4 \
         bash -c "
+          apt-get update && apt-get install -y nodejs npm > /dev/null 2>&1 &&
           git clone https://github.com/ruby/ruby-bench /ruby-bench &&
           cd /ruby-bench &&
           ./run_benchmarks.rb 2>&1 | tee /results/output.txt &&
