@@ -89,6 +89,8 @@ function instance_status_icon
             echo "🔄"
         case completed
             echo "✅"
+        case terminated
+            echo "🏁"
         case failed
             echo "❌"
         case '*'
@@ -224,27 +226,83 @@ function monitor_benchmark
         end
 
         # Check if process crashed (not running but status isn't complete/failed)
-        if not pgrep -qf "ruby.*bench/bench.rb"
+        # Only report crash if we have a valid status file with a non-starting phase
+        # This prevents false positives when monitoring is started before/separately from the benchmark
+        if not pgrep -qf "ruby.*bench.rb"
             set phase (jq -r '.phase // "unknown"' $STATUS_FILE 2>/dev/null)
-            if test "$phase" != "complete" -a "$phase" != "failed"
-                echo
-                gum style --foreground 196 --bold "Benchmark process crashed!"
-                echo
-                gum style --foreground 245 "Last lines of log:"
-                echo
-                tail -20 $LOG_FILE 2>/dev/null | grep -E "(Error|error|failed|Failed|denied|Denied)" | tail -5
-                echo
-                gum style --foreground 245 "Run './run_benchmark.fish nuke' to clean up, then retry."
-                if test "$NONINTERACTIVE" != "true"
-                    if confirm "View full log?"
-                        less $LOG_FILE
+            # Only consider it crashed if we're in a mid-run phase (not starting/unknown/complete/failed)
+            # Starting phases: starting, starting_run
+            # Terminal phases: complete, failed
+            # Mid-run phases: everything else (terraform_apply, instances_ready, etc.)
+            switch $phase
+                case complete failed starting starting_run unknown ""
+                    # Not a crash - either terminal, just starting, or no status yet
+                case '*'
+                    # Mid-run phase with no process = crash
+                    echo
+                    gum style --foreground 196 --bold "Benchmark process crashed!"
+                    echo
+                    gum style --foreground 245 "Last lines of log:"
+                    echo
+                    tail -20 $LOG_FILE 2>/dev/null | grep -E "(Error|error|failed|Failed|denied|Denied)" | tail -5
+                    echo
+                    gum style --foreground 245 "Run './run_benchmark.fish nuke' to clean up, then retry."
+                    if test "$NONINTERACTIVE" != "true"
+                        if confirm "View full log?"
+                            less $LOG_FILE
+                        end
                     end
-                end
-                break
+                    break
             end
         end
 
         sleep 2
+    end
+end
+
+function select_results_folder
+    set results_dir "$SCRIPT_DIR/results"
+    set new_folder_name (date "+%Y%m%d-%H%M%S")
+
+    # Get existing folders (excluding hidden files and non-directories)
+    set existing_folders (ls -1d $results_dir/*/ 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}-[0-9]{6}$' | sort -r)
+
+    # Build choices list
+    set choices "New folder ($new_folder_name)"
+    for folder in $existing_folders
+        set choices $choices $folder
+    end
+
+    if test "$NONINTERACTIVE" = "true"
+        # Non-interactive mode: always create new folder
+        echo $new_folder_name
+        return
+    end
+
+    gum style --foreground 245 "Select results folder:"
+    set choice (printf '%s\n' $choices | gum choose)
+
+    if test -z "$choice"
+        # User cancelled
+        echo ""
+        return
+    end
+
+    if string match -q "New folder*" "$choice"
+        echo $new_folder_name
+    else
+        # Warn about overwriting
+        set folder_path "$results_dir/$choice"
+        set file_count (find $folder_path -type f 2>/dev/null | wc -l | string trim)
+        if test "$file_count" -gt 0
+            echo
+            gum style --foreground 214 "Warning: $choice contains $file_count file(s)"
+            if not confirm --default=false "Overwrite existing results?"
+                echo ""
+                return
+            end
+        end
+        echo $choice
     end
 end
 
@@ -257,10 +315,20 @@ function start_benchmark
         exit 1
     end
 
+    # Select results folder
+    set results_folder (select_results_folder)
+    if test -z "$results_folder"
+        gum log --level info "Cancelled"
+        exit 0
+    end
+
+    echo
+
     # Confirm start (skip in non-interactive mode)
     if test "$NONINTERACTIVE" != "true"
         gum style --foreground 245 "This will create 12 EC2 instances (3 replicas x 4 types)"
         gum style --foreground 245 "and run the benchmark suite on each in parallel."
+        gum style --foreground 245 "Results will be saved to: results/$results_folder"
         echo
 
         if not confirm "Start benchmark?"
@@ -272,8 +340,8 @@ function start_benchmark
     echo
     gum log --level info "Starting benchmark in background..."
 
-    # Start benchmark in background
-    ruby $BENCH_SCRIPT > $LOG_FILE 2>&1 &
+    # Start benchmark in background with results folder argument
+    ruby $BENCH_SCRIPT --results-folder "$results_folder" > $LOG_FILE 2>&1 &
     set bench_pid $last_pid
 
     gum log --level info "Benchmark started (PID: $bench_pid)"
@@ -447,7 +515,7 @@ function stop_benchmark
     echo
 
     # Find running bench.rb process
-    set bench_pids (pgrep -f "ruby.*bench/bench.rb" 2>/dev/null)
+    set bench_pids (pgrep -f "ruby.*bench.rb" 2>/dev/null)
 
     if test -z "$bench_pids"
         gum log --level warn "No benchmark process found running"

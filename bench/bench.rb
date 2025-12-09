@@ -5,6 +5,7 @@ require "base64"
 require "json"
 require "fileutils"
 require "open3"
+require "optparse"
 require "time"
 require "timeout"
 
@@ -16,8 +17,8 @@ class BenchmarkOrchestrator
   MAX_SSH_RETRIES = 30
   SSH_RETRY_DELAY = 10
 
-  def initialize
-    @run_id = Time.now.strftime("%Y%m%d-%H%M%S")
+  def initialize(results_folder: nil)
+    @run_id = results_folder || Time.now.strftime("%Y%m%d-%H%M%S")
     @results_path = File.join(RESULTS_DIR, @run_id)
     @failed_instances = []
     @successful_instances = []
@@ -106,6 +107,14 @@ class BenchmarkOrchestrator
     return if instance_ids.empty?
 
     system("aws ec2 terminate-instances --region us-east-1 --instance-ids #{instance_ids.join(" ")} > /dev/null 2>&1")
+
+    # Update status to show instances are terminated
+    @status_mutex.synchronize do
+      instance_keys.each do |key|
+        @instance_status[key] = { status: "terminated", benchmark: nil, progress: nil }
+      end
+    end
+    update_status(phase: "running_benchmarks", instances: @instances)
   end
 
   def wait_for_ssh_ready
@@ -254,4 +263,12 @@ class BenchmarkOrchestrator
   end
 end
 
-BenchmarkOrchestrator.new.run
+options = {}
+OptionParser.new do |opts|
+  opts.banner = "Usage: bench.rb [options]"
+  opts.on("--results-folder FOLDER", "Use existing results folder instead of creating new one") do |folder|
+    options[:results_folder] = folder
+  end
+end.parse!
+
+BenchmarkOrchestrator.new(**options).run
