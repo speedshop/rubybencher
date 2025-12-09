@@ -133,6 +133,18 @@
       border-radius: 50%;
     }
 
+    .table-wrapper {
+      display: flex;
+      flex-direction: column;
+    }
+    .top-scrollbar {
+      overflow-x: auto;
+      overflow-y: hidden;
+      height: 12px;
+    }
+    .top-scrollbar-inner {
+      height: 1px;
+    }
     .table-container {
       overflow-x: auto;
     }
@@ -317,8 +329,12 @@
         <span>300%+</span>
         <span style="margin-left: 8px; color: #999;">(% slower than fastest)</span>
       </div>
-      <div class="table-container">
-        <table id="results-table">
+      <div class="table-wrapper">
+        <div class="top-scrollbar" id="top-scrollbar">
+          <div class="top-scrollbar-inner" id="top-scrollbar-inner"></div>
+        </div>
+        <div class="table-container" id="table-container">
+          <table id="results-table">
           <thead>
             <tr>
               <th rowspan="2">Benchmark</th>
@@ -378,6 +394,7 @@
             <% end %>
           </tbody>
         </table>
+        </div>
       </div>
     </div>
 
@@ -397,12 +414,12 @@
     const instances = <%= instance_names.to_json %>;
     const benchmarks = <%= all_benchmarks.to_json %>;
 
-    const colors = {
-      '<%= instance_names[0] %>': '#4e79a7',
-      '<%= instance_names[1] %>': '#f28e2c',
-      '<%= instance_names[2] %>': '#e15759',
-      '<%= instance_names[3] %>': '#76b7b2'
-    };
+    // D3 categorical color palette that works for any number of instances
+    const colorPalette = ['#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f', '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'];
+    const colors = {};
+    instances.forEach((inst, i) => {
+      colors[inst] = colorPalette[i % colorPalette.length];
+    });
 
     const tooltipEl = document.getElementById('tooltip');
 
@@ -777,6 +794,32 @@
 
         Object.values(svgMap).forEach(cell => observer.observe(cell));
       });
+
+    // Sync top scrollbar with table container
+    const topScrollbar = document.getElementById('top-scrollbar');
+    const topScrollbarInner = document.getElementById('top-scrollbar-inner');
+    const tableContainer = document.getElementById('table-container');
+    const resultsTableEl = document.getElementById('results-table');
+
+    // Set the inner div width to match the table width
+    function syncScrollbarWidth() {
+      topScrollbarInner.style.width = resultsTableEl.scrollWidth + 'px';
+    }
+    syncScrollbarWidth();
+    window.addEventListener('resize', syncScrollbarWidth);
+
+    // Sync scroll positions
+    let scrollingSrc = null;
+    topScrollbar.addEventListener('scroll', () => {
+      if (scrollingSrc === 'table') { scrollingSrc = null; return; }
+      scrollingSrc = 'top';
+      tableContainer.scrollLeft = topScrollbar.scrollLeft;
+    });
+    tableContainer.addEventListener('scroll', () => {
+      if (scrollingSrc === 'top') { scrollingSrc = null; return; }
+      scrollingSrc = 'table';
+      topScrollbar.scrollLeft = tableContainer.scrollLeft;
+    });
   </script>
 </body>
 </html>

@@ -45,43 +45,12 @@ resource "azurerm_network_security_group" "bench" {
   }
 }
 
-# Azure instance type configurations
+# Azure instance type configurations (reads from shared config)
 locals {
   azure_instance_types = {
-    # ARM (Ampere Altra)
-    "Standard_D32pls_v5" = {
-      vm_size = "Standard_D32pls_v5"
-      arch    = "arm64"
-    }
-    "Standard_D32pls_v6" = {
-      vm_size = "Standard_D32pls_v6"
-      arch    = "arm64"
-    }
-    # AMD
-    "Standard_D32als_v6" = {
-      vm_size = "Standard_D32als_v6"
-      arch    = "x86_64"
-    }
-    "Standard_D32als_v7" = {
-      vm_size = "Standard_D32als_v7"
-      arch    = "x86_64"
-    }
-    "Standard_F32als_v6" = {
-      vm_size = "Standard_F32als_v6"
-      arch    = "x86_64"
-    }
-    "Standard_F32als_v7" = {
-      vm_size = "Standard_F32als_v7"
-      arch    = "x86_64"
-    }
-    # Intel
-    "Standard_D32ls_v5" = {
-      vm_size = "Standard_D32ls_v5"
-      arch    = "x86_64"
-    }
-    "Standard_D32ls_v6" = {
-      vm_size = "Standard_D32ls_v6"
-      arch    = "x86_64"
+    for name, config in local.instance_types_config.azure : name => {
+      vm_size = name
+      arch    = config.arch
     }
   }
 

@@ -2,9 +2,68 @@
 
 set SCRIPT_DIR (dirname (status filename))
 set BENCH_SCRIPT "$SCRIPT_DIR/bench/bench.rb"
+set INSTANCE_TYPES_FILE "$SCRIPT_DIR/bench/instance_types.json"
 set STATUS_FILE "$SCRIPT_DIR/status.json"
 set LOG_FILE "$SCRIPT_DIR/bench.log"
 set -g NONINTERACTIVE false
+
+# Get all configured instance types from JSON
+function get_all_instance_types
+    jq -r '(.aws | keys[]) , (.azure | keys[])' $INSTANCE_TYPES_FILE 2>/dev/null
+end
+
+function get_aws_instance_types
+    jq -r '.aws | keys[]' $INSTANCE_TYPES_FILE 2>/dev/null
+end
+
+function get_azure_instance_types
+    jq -r '.azure | keys[]' $INSTANCE_TYPES_FILE 2>/dev/null
+end
+
+function count_instance_types
+    get_all_instance_types | wc -l | string trim
+end
+
+# Get completed instance types from a results folder
+# Returns types in their canonical form (e.g., "c6g.medium", "Standard_D32pls_v5")
+function get_completed_types_from_folder
+    set folder_path $argv[1]
+    set completed
+
+    for output_file in (find $folder_path -name "output.txt" 2>/dev/null)
+        if grep -q "Average of last" $output_file 2>/dev/null
+            set dir_name (basename (dirname $output_file))
+            # Remove replica suffix (-1, -2, -3)
+            set type_with_dashes (echo $dir_name | sed 's/-[0-9]*$//')
+            # Convert back to canonical form
+            if string match -q "Standard-*" $type_with_dashes
+                # Azure: Standard-D32pls-v5 -> Standard_D32pls_v5
+                set canonical (echo $type_with_dashes | sed 's/-/_/g')
+            else
+                # AWS: c6g-medium -> c6g.medium
+                set canonical (echo $type_with_dashes | sed 's/-/./')
+            end
+            # Add to list if not already present
+            if not contains $canonical $completed
+                set completed $completed $canonical
+            end
+        end
+    end
+    printf '%s\n' $completed
+end
+
+# Get pending instance types (configured but not completed)
+function get_pending_types
+    set folder_path $argv[1]
+    set all_types (get_all_instance_types)
+    set completed_types (get_completed_types_from_folder $folder_path)
+
+    for t in $all_types
+        if not contains $t $completed_types
+            echo $t
+        end
+    end
+end
 
 # Parse global flags
 function parse_flags
@@ -335,21 +394,58 @@ function select_results_folder
     if string match -q "New folder*" "$choice"
         echo $new_folder_name
     else
-        # Show completed instance types
         set folder_path "$results_dir/$choice"
-        set completed_types (find $folder_path -name "output.txt" -exec grep -l "Average of last" {} \; 2>/dev/null | xargs -n1 dirname | xargs -n1 basename | sed 's/-[0-9]*$//' | sort -u)
+        set completed_types (get_completed_types_from_folder $folder_path)
+        set pending_types (get_pending_types $folder_path)
+        set completed_count (count $completed_types)
+        set pending_count (count $pending_types)
 
-        if test (count $completed_types) -gt 0
-            echo
-            gum style --foreground 82 "Completed instance types (will be skipped):"
+        echo >&2
+        if test $completed_count -gt 0
+            gum style --foreground 82 "Completed ($completed_count types, will be skipped):" >&2
             for ctype in $completed_types
-                echo "  ✓ $ctype"
+                echo "  ✓ $ctype" >&2
             end
-            echo
-            if not confirm "Continue with remaining instance types?"
-                echo ""
-                return
+        end
+
+        if test $pending_count -gt 0
+            # Count by provider
+            set aws_pending 0
+            set azure_pending 0
+            for ptype in $pending_types
+                if string match -q "Standard_*" $ptype
+                    set azure_pending (math $azure_pending + 1)
+                else
+                    set aws_pending (math $aws_pending + 1)
+                end
             end
+
+            echo >&2
+            gum style --foreground 214 "Pending ($pending_count types, will be run):" >&2
+            for ptype in $pending_types
+                echo "  ○ $ptype" >&2
+            end
+
+            set replicas 3
+            set total_instances (math "$pending_count * $replicas")
+            echo >&2
+            gum style --foreground 245 "Will create $total_instances instances ($pending_count types × $replicas replicas)" >&2
+            if test $aws_pending -gt 0
+                gum style --foreground 245 "  AWS: $aws_pending types" >&2
+            end
+            if test $azure_pending -gt 0
+                gum style --foreground 245 "  Azure: $azure_pending types" >&2
+            end
+        else
+            echo >&2
+            gum style --foreground 245 "All instance types completed. Nothing to run." >&2
+            echo ""
+            return
+        end
+
+        echo >&2
+        if not confirm "Start benchmark?"
+            return 1
         end
         echo $choice
     end
@@ -364,30 +460,25 @@ function start_benchmark
         exit 1
     end
 
-    # Select results folder
+    if not test -f $INSTANCE_TYPES_FILE
+        gum log --level error "Instance types config not found: $INSTANCE_TYPES_FILE"
+        exit 1
+    end
+
+    # Select results folder (this shows completed/pending and confirms)
     set results_folder (select_results_folder)
+    or begin
+        gum log --level info "Cancelled"
+        exit 0
+    end
     if test -z "$results_folder"
         gum log --level info "Cancelled"
         exit 0
     end
 
     echo
-
-    # Confirm start (skip in non-interactive mode)
-    if test "$NONINTERACTIVE" != "true"
-        gum style --foreground 245 "This will create 12 EC2 instances (3 replicas x 4 types)"
-        gum style --foreground 245 "and run the benchmark suite on each in parallel."
-        gum style --foreground 245 "Results will be saved to: results/$results_folder"
-        echo
-
-        if not confirm "Start benchmark?"
-            gum log --level info "Cancelled"
-            exit 0
-        end
-    end
-
-    echo
     gum log --level info "Starting benchmark in background..."
+    gum log --level info "Results folder: results/$results_folder"
 
     # Start benchmark in background with results folder argument
     ruby $BENCH_SCRIPT --results-folder "$results_folder" > $LOG_FILE 2>&1 &

@@ -170,43 +170,16 @@ locals {
   EOF
 }
 
-# Instance type configurations
+# Load instance types from JSON config
 locals {
+  instance_types_config = jsondecode(file("${path.module}/../instance_types.json"))
+
+  # AWS instance types with AMI mappings
   instance_types = {
-    "c8g.medium" = {
-      instance_type = "c8g.medium"
-      ami           = data.aws_ami.al2023_arm.id
-      arch          = "arm64"
-    }
-    "c7g.medium" = {
-      instance_type = "c7g.medium"
-      ami           = data.aws_ami.al2023_arm.id
-      arch          = "arm64"
-    }
-    "c6g.medium" = {
-      instance_type = "c6g.medium"
-      ami           = data.aws_ami.al2023_arm.id
-      arch          = "arm64"
-    }
-    "c8a.medium" = {
-      instance_type = "c8a.medium"
-      ami           = data.aws_ami.al2023_x86.id
-      arch          = "x86_64"
-    }
-    "c7a.medium" = {
-      instance_type = "c7a.medium"
-      ami           = data.aws_ami.al2023_x86.id
-      arch          = "x86_64"
-    }
-    "c8i.large" = {
-      instance_type = "c8i.large"
-      ami           = data.aws_ami.al2023_x86.id
-      arch          = "x86_64"
-    }
-    "c7i.large" = {
-      instance_type = "c7i.large"
-      ami           = data.aws_ami.al2023_x86.id
-      arch          = "x86_64"
+    for name, config in local.instance_types_config.aws : name => {
+      instance_type = name
+      ami           = config.arch == "arm64" ? data.aws_ami.al2023_arm.id : data.aws_ami.al2023_x86.id
+      arch          = config.arch
     }
   }
 

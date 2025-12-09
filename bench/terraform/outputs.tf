@@ -97,3 +97,24 @@ output "replicas" {
   description = "Number of replicas per instance type"
   value       = var.replicas
 }
+
+# Instance type configuration outputs
+output "configured_instance_types" {
+  description = "All configured instance types from config file"
+  value       = local.instance_types_config
+}
+
+output "aws_instance_type_names" {
+  description = "List of AWS instance type names"
+  value       = keys(local.instance_types)
+}
+
+output "azure_instance_type_names" {
+  description = "List of Azure instance type names"
+  value       = keys(local.azure_instance_types)
+}
+
+output "all_instance_type_names" {
+  description = "List of all instance type names (AWS + Azure)"
+  value       = concat(keys(local.instance_types), keys(local.azure_instance_types))
+}

@@ -34,7 +34,7 @@ def parse_benchmark_file(file_path)
 
   lines.each do |line|
     # Match benchmark start
-    if match = line.match(/^Running benchmark "([^"]+)" \((\d+)\/67\)/)
+    if match = line.match(/^Running benchmark "([^"]+)" \((\d+)\/\d+\)/)
       benchmark_name = match[1]
       benchmark_num = match[2].to_i
 
@@ -112,7 +112,6 @@ end
 
 def generate_html(data, run_id)
   all_benchmarks = data.values.flat_map { |d| d[:benchmarks].keys }.uniq.sort
-  instance_names = data.keys.sort
   ruby_version = data.values.first[:ruby_version]
 
   # Parse run_id (e.g., "20251128-143326") into formatted date
@@ -120,6 +119,11 @@ def generate_html(data, run_id)
     Time.new($1.to_i, $2.to_i, $3.to_i, $4.to_i, $5.to_i, $6.to_i).strftime("%B %d, %Y at %H:%M UTC")
   else
     run_id
+  end
+
+  # Sort instances by total benchmark time (fastest first)
+  instance_names = data.keys.sort_by do |instance|
+    data[instance][:benchmarks].values.sum { |b| b[:average] }
   end
 
   # Build iteration data for D3
