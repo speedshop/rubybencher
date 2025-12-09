@@ -10,6 +10,18 @@ variable "availability_zone" {
   default     = "us-east-1a"
 }
 
+variable "azure_subscription_id" {
+  description = "Azure subscription ID (set via TF_VAR_azure_subscription_id or ARM_SUBSCRIPTION_ID env var)"
+  type        = string
+  default     = ""
+}
+
+variable "azure_region" {
+  description = "Azure region"
+  type        = string
+  default     = "eastus"
+}
+
 variable "budget_alert_email" {
   description = "Email address for budget alerts (set via TF_VAR_budget_alert_email env var)"
   type        = string

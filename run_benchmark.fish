@@ -335,13 +335,18 @@ function select_results_folder
     if string match -q "New folder*" "$choice"
         echo $new_folder_name
     else
-        # Warn about overwriting
+        # Show completed instance types
         set folder_path "$results_dir/$choice"
-        set file_count (find $folder_path -type f 2>/dev/null | wc -l | string trim)
-        if test "$file_count" -gt 0
+        set completed_types (find $folder_path -name "output.txt" -exec grep -l "Average of last" {} \; 2>/dev/null | xargs -n1 dirname | xargs -n1 basename | sed 's/-[0-9]*$//' | sort -u)
+
+        if test (count $completed_types) -gt 0
             echo
-            gum style --foreground 214 "Warning: $choice contains $file_count file(s)"
-            if not confirm --default=false "Overwrite existing results?"
+            gum style --foreground 82 "Completed instance types (will be skipped):"
+            for ctype in $completed_types
+                echo "  ✓ $ctype"
+            end
+            echo
+            if not confirm "Continue with remaining instance types?"
                 echo ""
                 return
             end
