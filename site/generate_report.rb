@@ -11,11 +11,27 @@ RESULTS_DIR = Dir.glob(File.join(RESULTS_BASE, '*')).select { |f| File.directory
 OUTPUT_DIR = File.expand_path('public', __dir__)
 OUTPUT_FILE = File.join(OUTPUT_DIR, 'index.html')
 TEMPLATE_FILE = File.expand_path('templates/report.html.erb', __dir__)
-INSTANCE_LABEL_PREFIX = 'aws-'
+METADATA_FILE = 'metadata.json'
 
-def display_instance_name(name)
-  base = name.sub(/-[^-]+$/, '')
-  "#{INSTANCE_LABEL_PREFIX}#{base}"
+def load_instance_metadata(dir)
+  path = File.join(dir, METADATA_FILE)
+  return {} unless File.exist?(path)
+
+  JSON.parse(File.read(path), symbolize_names: true)
+rescue JSON::ParserError
+  {}
+end
+
+def base_instance_name(name, metadata = {})
+  return metadata[:instance_type] if metadata[:instance_type]
+
+  name.sub(/-[^-]+$/, '')
+end
+
+def display_instance_name(base_name, metadata = {})
+  label = base_name.to_s.gsub(/[_.]/, '-')
+  provider = metadata[:provider]
+  provider ? "#{provider}-#{label}" : label
 end
 
 def parse_benchmark_file(file_path)
@@ -74,11 +90,13 @@ def parse_benchmark_file(file_path)
   { benchmarks: benchmarks, architecture: architecture, ruby_version: ruby_version }
 end
 
-def remap_instances(data)
+def remap_instances(data, metadata = {})
   remapped = {}
 
   data.each do |instance, inst_data|
-    new_name = display_instance_name(instance)
+    meta = metadata[instance] || {}
+    base_name = base_instance_name(instance, meta)
+    new_name = display_instance_name(base_name, meta)
     remapped[new_name] ||= {
       benchmarks: {},
       architecture: inst_data[:architecture],
@@ -234,96 +252,40 @@ FileUtils.mkdir_p(OUTPUT_DIR)
 static_dir = File.expand_path('static', __dir__)
 FileUtils.cp_r(Dir.glob(File.join(static_dir, '*')), OUTPUT_DIR)
 
-# Check if results use new multi-run format (run-1, run-2, etc.) or old single-run format
-run_dirs = Dir.glob(File.join(RESULTS_DIR, 'run-*')).select { |f| File.directory?(f) }.sort
+# Results are expected at results/{run_id}/{instance-type}/output.txt
+# Instance names may have replica suffixes (e.g., c6g-medium-1, c6g-medium-2)
+# Combine replicas into a single instance type
 data = {}
+instance_metadata = {}
 
-if run_dirs.any?
-  # New format: results/{run_id}/run-{N}/{instance-type}/output.txt
-  puts "Found #{run_dirs.size} runs"
+instance_dirs = Dir.glob(File.join(RESULTS_DIR, '*')).select { |f| File.directory?(f) }
 
-  run_dirs.each do |run_dir|
-    run_name = File.basename(run_dir)
-    puts "  Processing #{run_name}..."
+instance_dirs.each do |dir|
+  raw_instance_name = File.basename(dir)
+  output_file = File.join(dir, 'output.txt')
+  next unless File.exist?(output_file)
 
-    instance_dirs = Dir.glob(File.join(run_dir, '*')).select { |f| File.directory?(f) }
-    instance_dirs.each do |dir|
-      instance_name = File.basename(dir)
-      output_file = File.join(dir, 'output.txt')
-      next unless File.exist?(output_file)
+  instance_name = raw_instance_name
 
-      puts "    Parsing #{instance_name}..."
-      run_data = parse_benchmark_file(output_file)
+  puts "  Parsing #{instance_name}..."
+  run_data = parse_benchmark_file(output_file)
+  meta = load_instance_metadata(dir)
+  instance_metadata[instance_name] = meta unless meta.empty?
 
-      if data[instance_name]
-        # Merge benchmarks from this run into existing data
-        run_data[:benchmarks].each do |bench_name, bench_data|
-          if data[instance_name][:benchmarks][bench_name]
-            # Append iterations from this run
-            data[instance_name][:benchmarks][bench_name][:iterations].concat(bench_data[:iterations])
-          else
-            data[instance_name][:benchmarks][bench_name] = bench_data
-          end
-        end
-      else
-        data[instance_name] = run_data
-      end
-    end
-  end
-
-  # Recalculate averages after merging all runs
-  data.each do |instance_name, instance_data|
-    instance_data[:benchmarks].each do |bench_name, bench_data|
-      iters = bench_data[:iterations]
-      bench_data[:average] = (iters.sum.to_f / iters.size).round
-    end
-    total_iters = instance_data[:benchmarks].values.sum { |b| b[:iterations].size }
-    puts "  #{instance_name}: #{instance_data[:benchmarks].size} benchmarks, #{total_iters} total iterations"
-  end
-else
-  # Old format: results/{run_id}/{instance-type}/output.txt
-  # Instance names may have replica suffixes (e.g., c6g-medium-1, c6g-medium-2)
-  # Combine replicas into a single instance type
-  instance_dirs = Dir.glob(File.join(RESULTS_DIR, '*')).select { |f| File.directory?(f) }
-
-  instance_dirs.each do |dir|
-    raw_instance_name = File.basename(dir)
-    output_file = File.join(dir, 'output.txt')
-    next unless File.exist?(output_file)
-
-    # Strip replica suffix (e.g., "c6g-medium-1" -> "c6g-medium")
-    instance_name = raw_instance_name.sub(/-\d+$/, '')
-
-    puts "  Parsing #{raw_instance_name} -> #{instance_name}..."
-    run_data = parse_benchmark_file(output_file)
-
-    if data[instance_name]
-      # Merge benchmarks from this replica into existing data
-      run_data[:benchmarks].each do |bench_name, bench_data|
-        if data[instance_name][:benchmarks][bench_name]
-          # Append iterations from this replica
-          data[instance_name][:benchmarks][bench_name][:iterations].concat(bench_data[:iterations])
-        else
-          data[instance_name][:benchmarks][bench_name] = bench_data
-        end
-      end
-    else
-      data[instance_name] = run_data
-    end
-  end
-
-  # Recalculate averages after merging all replicas
-  data.each do |instance_name, instance_data|
-    instance_data[:benchmarks].each do |bench_name, bench_data|
-      iters = bench_data[:iterations]
-      bench_data[:average] = (iters.sum.to_f / iters.size).round
-    end
-    total_iters = instance_data[:benchmarks].values.sum { |b| b[:iterations].size }
-    puts "  #{instance_name}: #{instance_data[:benchmarks].size} benchmarks, #{total_iters} total iterations"
-  end
+  data[instance_name] = run_data
 end
 
-data = remap_instances(data)
+# Recalculate averages after merging all replicas
+data.each do |instance_name, instance_data|
+  instance_data[:benchmarks].each do |bench_name, bench_data|
+    iters = bench_data[:iterations]
+    bench_data[:average] = (iters.sum.to_f / iters.size).round
+  end
+  total_iters = instance_data[:benchmarks].values.sum { |b| b[:iterations].size }
+  puts "  #{instance_name}: #{instance_data[:benchmarks].size} benchmarks, #{total_iters} total iterations"
+end
+
+data = remap_instances(data, instance_metadata)
 
 puts "\nGenerating HTML report..."
 run_id = File.basename(RESULTS_DIR)
