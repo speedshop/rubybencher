@@ -123,36 +123,45 @@ function show_status
             set phase_style (gum style --foreground 245 "→ $phase_desc")
     end
 
-    # Instance status - group by instance type
+    # Instance status - group by instance type, compact horizontal layout
     set instances_json (jq -r '.instance_status // {}' $STATUS_FILE)
-    set instance_lines ""
+    set instance_types_list
+    set instance_type_data
     if test "$instances_json" != "{}" -a "$instances_json" != "null"
-        # Get unique instance types (e.g., c6g.medium from c6g.medium-1)
+        # Get unique instance types and build compact display
         set instance_keys (echo $instances_json | jq -r 'keys[]' 2>/dev/null | sort)
         set current_type ""
+        set type_replicas ""
+
         for instance_key in $instance_keys
-            # Extract type from key (e.g., "c6g.medium" from "c6g.medium-1")
             set inst_type (echo $instance_key | sed 's/-[0-9]*$//')
-
-            # Add type header if new type
-            if test "$inst_type" != "$current_type"
-                set current_type $inst_type
-                set instance_lines "$instance_lines\n  $inst_type:"
-            end
-
-            # Get status info
             set inst_status (echo $instances_json | jq -r ".[\"$instance_key\"].status // \"unknown\"")
             set progress_val (echo $instances_json | jq -r ".[\"$instance_key\"].progress // empty")
             set icon (instance_status_icon $inst_status)
 
-            # Extract replica number
-            set replica (echo $instance_key | sed 's/.*-//')
-
-            if test -n "$progress_val" -a "$progress_val" != "null"
-                set instance_lines "$instance_lines\n    $icon #$replica ($progress_val)"
+            # Build replica display (icon + progress if running)
+            if test "$inst_status" = "running" -a -n "$progress_val" -a "$progress_val" != "null"
+                set replica_display "$icon ""$progress_val"
             else
-                set instance_lines "$instance_lines\n    $icon #$replica"
+                set replica_display "$icon"
             end
+
+            if test "$inst_type" != "$current_type"
+                # Save previous type if exists
+                if test -n "$current_type"
+                    set instance_types_list $instance_types_list "$current_type"
+                    set instance_type_data $instance_type_data "$type_replicas"
+                end
+                set current_type $inst_type
+                set type_replicas $replica_display
+            else
+                set type_replicas "$type_replicas $replica_display"
+            end
+        end
+        # Save last type
+        if test -n "$current_type"
+            set instance_types_list $instance_types_list "$current_type"
+            set instance_type_data $instance_type_data "$type_replicas"
         end
     end
 
@@ -163,10 +172,45 @@ function show_status
     echo
     echo $phase_style
 
-    if test -n "$instance_lines"
+    if test (count $instance_types_list) -gt 0
         echo
         gum style --foreground 245 "Instances:"
-        echo -e $instance_lines
+
+        # Calculate column width based on longest type name + replicas
+        set max_width 0
+        for i in (seq (count $instance_types_list))
+            set type_name $instance_types_list[$i]
+            set replicas $instance_type_data[$i]
+            set entry_len (string length "$type_name $replicas")
+            if test $entry_len -gt $max_width
+                set max_width $entry_len
+            end
+        end
+        set col_width (math $max_width + 4)
+
+        # Get terminal width, default to 80
+        set term_width (tput cols 2>/dev/null || echo 80)
+        set num_cols (math "floor($term_width / $col_width)")
+        if test $num_cols -lt 1
+            set num_cols 1
+        end
+
+        # Display in columns
+        set total_types (count $instance_types_list)
+        set i 1
+        while test $i -le $total_types
+            set line ""
+            for col in (seq $num_cols)
+                if test $i -le $total_types
+                    set type_name $instance_types_list[$i]
+                    set replicas $instance_type_data[$i]
+                    set entry (printf "%-"$col_width"s" "$type_name $replicas")
+                    set line "$line$entry"
+                    set i (math $i + 1)
+                end
+            end
+            echo "  $line"
+        end
     end
 
     # Show timing with seconds ago
