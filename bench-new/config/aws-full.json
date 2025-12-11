@@ -1,12 +1,38 @@
 {
-  "ruby_version": "3.4.1",
-  "runs_per_instance_type": 5,
+  "ruby_version": "3.4.7",
+  "runs_per_instance_type": 3,
   "aws": [
-    "c8g.medium",
-    "c8g.large",
-    "c8g.xlarge",
-    "c7g.medium",
-    "c7g.large",
-    "c7g.xlarge"
+    {
+      "instance_type": "c8g.medium",
+      "alias": "c8g"
+    },
+    {
+      "instance_type": "c7g.medium",
+      "alias": "c7g"
+    },
+    {
+      "instance_type": "c6g.medium",
+      "alias": "c6g"
+    },
+    {
+      "instance_type": "c8i.large",
+      "alias": "c8i"
+    },
+    {
+      "instance_type": "c7i.large",
+      "alias": "c7i"
+    },
+    {
+      "instance_type": "c6i.large",
+      "alias": "c6i"
+    },
+    {
+      "instance_type": "c8a.medium",
+      "alias": "c8a"
+    },
+    {
+      "instance_type": "c7a.medium",
+      "alias": "c7a"
+    }
   ]
 }

@@ -32,10 +32,11 @@ class StorageService
 
       @region = ENV.fetch('AWS_REGION', 'us-east-1')
       @endpoint = ENV['S3_ENDPOINT']
+      @public_endpoint = ENV['S3_PUBLIC_ENDPOINT']
       @bucket = ENV.fetch('S3_BUCKET_NAME', 'railsbencher-results')
-      @public_endpoint = ENV.fetch('S3_PUBLIC_ENDPOINT', @endpoint)
 
       @s3_client = build_client
+      @public_s3_client = build_client(public_endpoint: true) if @public_endpoint.present?
     end
 
     def generate_presigned_urls(run_id:, task_id:)
@@ -52,14 +53,7 @@ class StorageService
 
     def result_url(key)
       return nil unless key
-
-      url = presign_get(key)
-
-      if @public_endpoint.present? && @endpoint.present?
-        url.sub(@endpoint, @public_endpoint)
-      else
-        url
-      end
+      presign_get(key)
     end
 
     def collect_all_results(run)
@@ -98,14 +92,15 @@ class StorageService
 
     private
 
-    def build_client
+    def build_client(public_endpoint: false)
       options = {
         region: @region,
         credentials: @credentials
       }
 
-      if @endpoint.present?
-        options[:endpoint] = @endpoint
+      endpoint = public_endpoint ? @public_endpoint : @endpoint
+      if endpoint.present?
+        options[:endpoint] = endpoint
         options[:force_path_style] = true
       end
 
@@ -116,8 +111,13 @@ class StorageService
       @presigner ||= Aws::S3::Presigner.new(client: @s3_client)
     end
 
+    def public_presigner
+      @public_presigner ||= Aws::S3::Presigner.new(client: @public_s3_client || @s3_client)
+    end
+
     def presign_put(key)
-      presigner.presigned_url(
+      # Use public presigner for uploads so external task runners can reach the endpoint
+      public_presigner.presigned_url(
         :put_object,
         bucket: @bucket,
         key: key,
@@ -126,7 +126,7 @@ class StorageService
     end
 
     def presign_get(key)
-      presigner.presigned_url(
+      public_presigner.presigned_url(
         :get_object,
         bucket: @bucket,
         key: key,

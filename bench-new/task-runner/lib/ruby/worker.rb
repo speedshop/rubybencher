@@ -9,7 +9,7 @@ require_relative "logger"
 
 module TaskRunner
   class Worker
-    def initialize(orchestrator_url:, api_key:, run_id:, provider:, instance_type:, runner_id:, mock_mode: false, debug_mode: false, script_dir: nil)
+    def initialize(orchestrator_url:, api_key:, run_id:, provider:, instance_type:, runner_id:, mock_mode: false, debug_mode: false, no_exit: false, script_dir: nil)
       @orchestrator_url = orchestrator_url
       @api_key = api_key
       @run_id = run_id
@@ -18,6 +18,7 @@ module TaskRunner
       @runner_id = runner_id
       @mock_mode = mock_mode
       @debug_mode = debug_mode
+      @no_exit = no_exit
       @script_dir = script_dir || File.expand_path("../..", __dir__)
       @api = ApiClient.new(orchestrator_url, api_key)
       @logger = Logger.new(debug_mode: debug_mode)
@@ -40,11 +41,21 @@ module TaskRunner
           @logger.info "Waiting #{retry_after} seconds for tasks..."
           sleep(retry_after)
         when "done"
-          @logger.info "Received 'done' signal, shutting down"
-          return 0
+          if @no_exit
+            @logger.info "Received 'done' signal, but no-exit mode enabled. Waiting..."
+            sleep(30)
+          else
+            @logger.info "Received 'done' signal, shutting down"
+            return 0
+          end
         when nil, ""
-          @logger.info "Received empty status, shutting down"
-          return 0
+          if @no_exit
+            @logger.info "Received empty status, but no-exit mode enabled. Waiting..."
+            sleep(30)
+          else
+            @logger.info "Received empty status, shutting down"
+            return 0
+          end
         else
           if claim_response["error"]
             @logger.info "Received error: #{claim_response["error"]} - shutting down"

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_11_005500) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_11_233040) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -36,6 +36,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_11_005500) do
     t.text "heartbeat_message"
     t.string "heartbeat_status"
     t.string "instance_type", null: false
+    t.string "instance_type_alias"
     t.integer "progress_pct"
     t.string "provider", null: false
     t.bigint "run_id", null: false

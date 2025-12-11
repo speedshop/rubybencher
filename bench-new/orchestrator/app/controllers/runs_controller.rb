@@ -77,8 +77,18 @@ class RunsController < ApplicationController
 
     %w[aws azure local].each do |provider|
       if params[provider].present?
-        params[provider].each do |instance_type|
-          instance_types << { provider: provider, instance_type: instance_type }
+        params[provider].each do |item|
+          # Support both new format (object with instance_type/alias) and legacy (string)
+          if item.is_a?(Hash) || item.is_a?(ActionController::Parameters)
+            instance_types << {
+              provider: provider,
+              instance_type: item[:instance_type] || item["instance_type"],
+              instance_type_alias: item[:alias] || item["alias"]
+            }
+          else
+            # Legacy: plain string
+            instance_types << { provider: provider, instance_type: item, instance_type_alias: item }
+          end
         end
       end
     end
@@ -94,6 +104,7 @@ class RunsController < ApplicationController
         tasks << run.tasks.create!(
           provider: config[:provider],
           instance_type: config[:instance_type],
+          instance_type_alias: config[:instance_type_alias],
           run_number: run_number,
           status: 'pending'
         )
@@ -108,6 +119,7 @@ class RunsController < ApplicationController
       id: task.id,
       provider: task.provider,
       instance_type: task.instance_type,
+      instance_type_alias: task.instance_type_alias,
       run_number: task.run_number,
       status: task.status
     }

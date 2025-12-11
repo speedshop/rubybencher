@@ -4,7 +4,8 @@
 
 set -g SCRIPT_DIR (dirname (status --current-filename))
 set -g BENCH_DIR (dirname $SCRIPT_DIR)
-set -g RESULTS_DIR "$BENCH_DIR/results"
+set -g REPO_ROOT (dirname $BENCH_DIR)
+set -g RESULTS_DIR "$REPO_ROOT/results"
 
 # Default values
 set -g CONFIG_FILE ""
@@ -13,6 +14,7 @@ set -g LOCAL_ORCHESTRATOR false
 set -g SKIP_INFRA false
 set -g DEBUG false
 set -g API_KEY ""
+set -g MOCK_BENCHMARK false
 
 function print_usage
     echo "Usage: run.fish [OPTIONS]"
@@ -23,7 +25,8 @@ function print_usage
     echo "  -p, --provider PROVIDER   Only run for specific provider (aws, azure, local)"
     echo "  --local-orchestrator      Run orchestrator locally via docker-compose"
     echo "  --skip-infra              Skip terraform, use existing infrastructure"
-    echo "  --debug                   Enable debug mode"
+    echo "  --mock                    Run mock benchmark instead of real benchmark"
+    echo "  --debug                   Enable debug mode (verbose output, keeps task runners alive)"
     echo "  -h, --help                Show this help"
     echo ""
     echo "Environment Variables:"
@@ -73,6 +76,8 @@ function parse_args
                 set -g LOCAL_ORCHESTRATOR true
             case --skip-infra
                 set -g SKIP_INFRA true
+            case --mock
+                set -g MOCK_BENCHMARK true
             case --debug
                 set -g DEBUG true
             case -h --help
@@ -197,7 +202,7 @@ function start_local_orchestrator
     # Set the orchestrator URL for local mode
     set -g ORCHESTRATOR_URL "http://localhost:3000"
 
-    log_success "Local orchestrator starting at $ORCHESTRATOR_URL"
+    log_success "Local orchestrator starting..."
 end
 
 function stop_local_orchestrator
@@ -385,10 +390,22 @@ function start_local_task_runners
     end
 
     # Start a task runner for each instance type in the local config
-    for instance_type in (cat "$CONFIG_FILE" | jq -r '.local[]')
-        set -l container_name "task-runner-local-$instance_type-$RUN_ID"
+    for i in (seq 0 (math (cat "$CONFIG_FILE" | jq '.local | length') - 1))
+        set -l instance_type (cat "$CONFIG_FILE" | jq -r ".local[$i].instance_type")
+        set -l instance_alias (cat "$CONFIG_FILE" | jq -r ".local[$i].alias")
+        set -l container_name "task-runner-local-$instance_alias-$RUN_ID"
 
-        log_info "Starting task runner for local/$instance_type..."
+        log_info "Starting task runner for local/$instance_alias ($instance_type)..."
+
+        set -l mock_flag ""
+        if test "$MOCK_BENCHMARK" = true
+            set mock_flag "--mock"
+        end
+
+        set -l debug_flags ""
+        if test "$DEBUG" = true
+            set debug_flags "--debug --no-exit"
+        end
 
         docker run -d \
             --name "$container_name" \
@@ -399,9 +416,9 @@ function start_local_task_runners
             --run-id "$RUN_ID" \
             --provider "local" \
             --instance-type "$instance_type" \
-            --mock >/dev/null
+            $mock_flag $debug_flags >/dev/null
         or begin
-            log_error "Failed to start task runner for $instance_type"
+            log_error "Failed to start task runner for $instance_alias"
             exit 1
         end
 
@@ -535,6 +552,10 @@ function download_results
 
     if test -z "$gzip_url"; or test "$gzip_url" = "null"
         log_warning "No results gzip available yet"
+        if test "$DEBUG" = true
+            echo "API response:"
+            echo $response | jq .
+        end
         return 1
     end
 
@@ -543,21 +564,49 @@ function download_results
     mkdir -p "$run_results_dir"
 
     log_info "Downloading results archive..."
+    if test "$DEBUG" = true
+        log_info "Download URL: $gzip_url"
+    end
 
-    gum spin --spinner dot --title "Downloading results..." -- \
-        curl -s -o "$run_results_dir/results.tar.gz" "$gzip_url"
+    set -l http_code (curl -s -w "%{http_code}" -o "$run_results_dir/results.tar.gz" "$gzip_url")
+
+    if test "$http_code" != "200"
+        log_error "Failed to download results (HTTP $http_code)"
+        log_error "URL: $gzip_url"
+        if test -f "$run_results_dir/results.tar.gz"
+            set -l error_content (cat "$run_results_dir/results.tar.gz" 2>/dev/null | head -c 500)
+            if test -n "$error_content"
+                log_error "Response body: $error_content"
+            end
+            rm -f "$run_results_dir/results.tar.gz"
+        end
+        return 1
+    end
 
     if not test -f "$run_results_dir/results.tar.gz"
-        log_error "Failed to download results"
+        log_error "Failed to download results: file not created"
+        return 1
+    end
+
+    # Verify it's a valid gzip file
+    if not gzip -t "$run_results_dir/results.tar.gz" 2>/dev/null
+        log_error "Downloaded file is not a valid gzip archive"
+        if test "$DEBUG" = true
+            log_error "File contents:"
+            head -c 200 "$run_results_dir/results.tar.gz"
+        end
         return 1
     end
 
     log_info "Extracting results..."
 
-    cd "$run_results_dir"
-    tar -xzf results.tar.gz 2>/dev/null || true
-    cd -
+    tar -xzf "$run_results_dir/results.tar.gz" -C "$run_results_dir"
+    if test $status -ne 0
+        log_error "Failed to extract results archive"
+        return 1
+    end
 
+    rm "$run_results_dir/results.tar.gz"
     log_success "Results saved to: $run_results_dir"
 end
 
@@ -568,14 +617,8 @@ function cleanup_on_interrupt
     # Always stop local task runners if they were started
     stop_local_task_runners
 
-    if test "$LOCAL_ORCHESTRATOR" = true
-        if gum confirm "Stop local orchestrator?"
-            stop_local_orchestrator
-        end
-    else
-        if gum confirm "Run nuke script to destroy infrastructure?"
-            fish "$BENCH_DIR/nuke/nuke.fish"
-        end
+    if gum confirm "Run nuke script to clean up infrastructure?"
+        fish "$BENCH_DIR/nuke/nuke.fish"
     end
 
     exit 130
@@ -658,12 +701,10 @@ function main
         "Run ID: $RUN_ID" \
         "Results: $RESULTS_DIR/$RUN_ID"
 
-    # Offer to stop local orchestrator
-    if test "$LOCAL_ORCHESTRATOR" = true
-        echo ""
-        if gum confirm "Stop local orchestrator?"
-            stop_local_orchestrator
-        end
+    # Offer to clean up infrastructure
+    echo ""
+    if gum confirm "Run nuke script to clean up infrastructure?"
+        fish "$BENCH_DIR/nuke/nuke.fish"
     end
 end
 

@@ -63,7 +63,7 @@ module TaskRunner
         # Use --no-pinning to avoid taskset issues in containers
         # Run only YJIT (skip interpreter baseline) with headline benchmarks
         ruby_path = `which ruby`.strip
-        cmd = "./run_benchmarks.rb --headline --no-pinning --out-path #{@work_dir} -e=yjit::#{ruby_path} --yjit"
+        cmd = "./run_benchmarks.rb --headline --no-pinning --out-path #{@work_dir} -e=yjit::#{ruby_path}"
         @logger.info "Executing: #{cmd}"
 
         unless run_command_with_output(cmd, File.join(@work_dir, "benchmark_output.txt"))

@@ -76,6 +76,7 @@ class TasksController < ApplicationController
         id: task.id,
         provider: task.provider,
         instance_type: task.instance_type,
+        instance_type_alias: task.instance_type_alias,
         run_number: task.run_number,
         ruby_version: run.ruby_version
       },
@@ -170,6 +171,7 @@ class TasksController < ApplicationController
       id: task.id,
       provider: task.provider,
       instance_type: task.instance_type,
+      instance_type_alias: task.instance_type_alias,
       run_number: task.run_number,
       status: task.status,
       runner_id: task.runner_id,

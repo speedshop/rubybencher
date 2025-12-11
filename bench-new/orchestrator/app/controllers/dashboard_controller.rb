@@ -5,6 +5,13 @@ class DashboardController < ApplicationController
     @task_stats = calculate_task_stats(@run)
   end
 
+  def tasks_frame
+    @run = Run.last
+    @tasks = @run&.tasks&.order(created_at: :desc) || []
+    @task_stats = calculate_task_stats(@run)
+    render partial: "tasks_frame"
+  end
+
   private
 
   def calculate_task_stats(run)

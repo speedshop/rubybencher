@@ -26,6 +26,7 @@ module TaskRunner
       logger.info "Runner ID: #{runner_id}"
       logger.info "Benchmark Mode: #{options[:mock_mode] ? "mock" : "ruby-bench"}"
       logger.info "Debug Mode: #{options[:debug_mode]}"
+      logger.info "No Exit Mode: #{options[:no_exit]}"
       logger.info "Ruby: #{RUBY_VERSION}"
       logger.info "========================================"
 
@@ -38,6 +39,7 @@ module TaskRunner
         runner_id: runner_id,
         mock_mode: options[:mock_mode],
         debug_mode: options[:debug_mode],
+        no_exit: options[:no_exit],
         script_dir: options[:script_dir]
       )
 
@@ -60,6 +62,7 @@ module TaskRunner
         instance_type: nil,
         mock_mode: false,
         debug_mode: false,
+        no_exit: false,
         script_dir: File.expand_path("../..", __dir__)
       }
 
@@ -92,6 +95,10 @@ module TaskRunner
 
         opts.on("--debug", "Don't shutdown on failure") do
           options[:debug_mode] = true
+        end
+
+        opts.on("--no-exit", "Don't exit when no tasks remain, keep polling") do
+          options[:no_exit] = true
         end
 
         opts.on("--script-dir DIR", "Script directory (for finding mock benchmark)") do |v|
