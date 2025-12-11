@@ -19,7 +19,7 @@ variable "azure_subscription_id" {
 variable "azure_region" {
   description = "Azure region"
   type        = string
-  default     = "eastus"
+  default     = "centralus"
 }
 
 variable "budget_alert_email" {
@@ -34,8 +34,32 @@ variable "budget_limit" {
   default     = null
 }
 
-variable "replicas" {
-  description = "Number of instances per instance type (for reducing variance)"
+variable "aws_replicas" {
+  description = "Number of replicas per AWS instance type"
   type        = number
   default     = 3
+}
+
+variable "azure_replicas" {
+  description = "Number of replicas per Azure instance type"
+  type        = number
+  default     = 1
+}
+
+variable "bastion_allowed_cidrs" {
+  description = "CIDR blocks allowed to SSH into the bastion hosts"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "azure_bastion_allowed_cidrs" {
+  description = "CIDR blocks allowed to SSH into the Azure bastion"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "results_bucket_name" {
+  description = "S3 bucket name for benchmark result uploads"
+  type        = string
+  default     = "railsbencher-results"
 }

@@ -9,13 +9,9 @@
     "c7i.large": { "arch": "x86_64", "provider": "aws" }
   },
   "azure": {
-    "Standard_D32pls_v5": { "arch": "arm64", "provider": "azure" },
-    "Standard_D32pls_v6": { "arch": "arm64", "provider": "azure" },
-    "Standard_D32als_v6": { "arch": "x86_64", "provider": "azure" },
-    "Standard_D32als_v7": { "arch": "x86_64", "provider": "azure" },
-    "Standard_F32als_v6": { "arch": "x86_64", "provider": "azure" },
-    "Standard_F32als_v7": { "arch": "x86_64", "provider": "azure" },
-    "Standard_D32ls_v5": { "arch": "x86_64", "provider": "azure" },
-    "Standard_D32ls_v6": { "arch": "x86_64", "provider": "azure" }
+    "Standard_D2pls_v6": { "arch": "arm64", "provider": "azure" },
+    "Standard_D2als_v6": { "arch": "x86_64", "provider": "azure" },
+    "Standard_D2ls_v6": { "arch": "x86_64", "provider": "azure" },
+    "Standard_F2als_v6": { "arch": "x86_64", "provider": "azure" }
   }
 }

@@ -5,19 +5,19 @@ set BENCH_SCRIPT "$SCRIPT_DIR/bench/bench.rb"
 set INSTANCE_TYPES_FILE "$SCRIPT_DIR/bench/instance_types.json"
 set STATUS_FILE "$SCRIPT_DIR/status.json"
 set LOG_FILE "$SCRIPT_DIR/bench.log"
+set SSH_CONFIG_HELPER "$SCRIPT_DIR/bench/generate_ssh_config.sh"
+set FETCH_LOGS_SCRIPT "$SCRIPT_DIR/bench/fetch_logs_via_ssh.sh"
+set SSH_CONFIG_FILE "$SCRIPT_DIR/bench/ssh_config"
 set -g NONINTERACTIVE false
+set -g SSH_CONFIG_GENERATED false
 
-# Get all configured instance types from JSON
+# Return configured instance types as provider:type strings
+function list_configured_types
+    jq -r 'to_entries[] | "\(.key):\(.value | keys[])"' $INSTANCE_TYPES_FILE 2>/dev/null
+end
+
 function get_all_instance_types
-    jq -r '(.aws | keys[]) , (.azure | keys[])' $INSTANCE_TYPES_FILE 2>/dev/null
-end
-
-function get_aws_instance_types
-    jq -r '.aws | keys[]' $INSTANCE_TYPES_FILE 2>/dev/null
-end
-
-function get_azure_instance_types
-    jq -r '.azure | keys[]' $INSTANCE_TYPES_FILE 2>/dev/null
+    list_configured_types
 end
 
 function count_instance_types
@@ -32,20 +32,39 @@ function get_completed_types_from_folder
 
     for output_file in (find $folder_path -name "output.txt" 2>/dev/null)
         if grep -q "Average of last" $output_file 2>/dev/null
-            set dir_name (basename (dirname $output_file))
-            # Remove replica suffix (-1, -2, -3)
-            set type_with_dashes (echo $dir_name | sed 's/-[0-9]*$//')
-            # Convert back to canonical form
-            if string match -q "Standard-*" $type_with_dashes
-                # Azure: Standard-D32pls-v5 -> Standard_D32pls_v5
-                set canonical (echo $type_with_dashes | sed 's/-/_/g')
-            else
-                # AWS: c6g-medium -> c6g.medium
-                set canonical (echo $type_with_dashes | sed 's/-/./')
+            set result_dir (dirname $output_file)
+            set metadata_file "$result_dir/metadata.json"
+            set canonical ""
+            set provider ""
+
+            if test -f $metadata_file
+                set provider (jq -r '.provider // empty' $metadata_file 2>/dev/null)
+                set canonical (jq -r '.instance_type // empty' $metadata_file 2>/dev/null)
             end
-            # Add to list if not already present
-            if not contains $canonical $completed
-                set completed $completed $canonical
+
+            if test -z "$canonical"
+                set dir_name (basename $result_dir)
+                set type_with_dashes (echo $dir_name | sed 's/-[0-9]*$//')
+                if string match -q "Standard-*" $type_with_dashes
+                    set canonical (echo $type_with_dashes | sed 's/-/_/g')
+                else
+                    set canonical (echo $type_with_dashes | sed 's/-/./')
+                end
+            end
+
+            if test -z "$provider"; and test -n "$canonical"
+                set provider (jq -r --arg t "$canonical" 'to_entries[] | select(.value[$t]) | .key' $INSTANCE_TYPES_FILE 2>/dev/null | head -1)
+            end
+
+            if test -n "$canonical"
+                if test -n "$provider"
+                    set label "$provider:$canonical"
+                else
+                    set label $canonical
+                end
+                if not contains $label $completed
+                    set completed $completed $label
+                end
             end
         end
     end
@@ -59,9 +78,18 @@ function get_pending_types
     set completed_types (get_completed_types_from_folder $folder_path)
 
     for t in $all_types
-        if not contains $t $completed_types
-            echo $t
+        set provider (string split ":" $t)[1]
+        set type_name (string split ":" $t)[2]
+
+        # Exact match
+        if contains $t $completed_types
+            continue
         end
+        # Legacy runs may store just the type name without provider
+        if test -n "$type_name"; and contains $type_name $completed_types
+            continue
+        end
+        echo $t
     end
 end
 
@@ -112,7 +140,11 @@ function phase_to_description
         case starting_run
             echo "Starting run"
         case terraform_apply
-            echo "Provisioning EC2 instances"
+            echo "Provisioning cloud instances"
+        case terraform_init terraform_applying
+            echo "Provisioning cloud instances"
+        case waiting_for_results
+            echo "Waiting for results upload"
         case instances_ready
             echo "Instances ready"
         case waiting_for_ssh
@@ -186,7 +218,7 @@ function show_status
     set instances_json (jq -r '.instance_status // {}' $STATUS_FILE)
     set instance_types_list
     set instance_type_data
-    if test "$instances_json" != "{}" -a "$instances_json" != "null"
+    if test "$instances_json" != "{}"; and test "$instances_json" != "null"
         # Get unique instance types and build compact display
         set instance_keys (echo $instances_json | jq -r 'keys[]' 2>/dev/null | sort)
         set current_type ""
@@ -199,7 +231,7 @@ function show_status
             set icon (instance_status_icon $inst_status)
 
             # Build replica display (icon + progress if running)
-            if test "$inst_status" = "running" -a -n "$progress_val" -a "$progress_val" != "null"
+            if test "$inst_status" = "running"; and test -n "$progress_val"; and test "$progress_val" != "null"
                 set replica_display "$icon ""$progress_val"
             else
                 set replica_display "$icon"
@@ -273,7 +305,7 @@ function show_status
     end
 
     # Show timing with seconds ago
-    if test -n "$updated_at" -a "$updated_at" != "null"
+    if test -n "$updated_at"; and test "$updated_at" != "null"
         set updated_epoch (date -j -f "%Y-%m-%dT%H:%M:%S" (echo $updated_at | cut -d+ -f1) "+%s" 2>/dev/null)
         set now_epoch (date "+%s")
         if test -n "$updated_epoch"
@@ -286,6 +318,15 @@ function show_status
         end
     end
 
+    # Show last 10 lines of log
+    if test -f $LOG_FILE
+        echo
+        gum style --foreground 245 "Recent log:"
+        tail -10 $LOG_FILE 2>/dev/null | while read -l line
+            gum style --foreground 241 "  $line"
+        end
+    end
+
     # Check for completion
     switch $phase
         case complete
@@ -293,7 +334,7 @@ function show_status
             set results_path (jq -r '.results_path // ""' $STATUS_FILE)
             set successful_count (jq -r '.successful | length' $STATUS_FILE)
             gum style --foreground 82 "All $successful_count instances completed successfully!"
-            if test -n "$results_path" -a "$results_path" != "null"
+            if test -n "$results_path"; and test "$results_path" != "null"
                 gum style --foreground 245 "Results: $results_path"
             end
             return 0
@@ -317,9 +358,17 @@ function monitor_benchmark
 
         if test $status_code -eq 0
             # Complete
+            if test "$NONINTERACTIVE" != "true"
+                maybe_generate_ssh_config
+                offer_fetch_logs "Fetch logs via bastion now?"
+            end
             break
         else if test $status_code -eq 2
             # Failed (status file says failed)
+            if test "$NONINTERACTIVE" != "true"
+                maybe_generate_ssh_config
+                offer_fetch_logs "Fetch logs via bastion for debugging?"
+            end
             if test "$NONINTERACTIVE" != "true"
                 if confirm "View log file?"
                     less $LOG_FILE
@@ -350,16 +399,58 @@ function monitor_benchmark
                     tail -20 $LOG_FILE 2>/dev/null | grep -E "(Error|error|failed|Failed|denied|Denied)" | tail -5
                     echo
                     gum style --foreground 245 "Run './run_benchmark.fish nuke' to clean up, then retry."
+                    maybe_generate_ssh_config
                     if test "$NONINTERACTIVE" != "true"
-                        if confirm "View full log?"
-                            less $LOG_FILE
-                        end
+                        offer_fetch_logs "Fetch logs via bastion for debugging?"
                     end
                     break
             end
         end
 
         sleep 2
+    end
+end
+
+# Generate SSH config once the infrastructure exists and Terraform outputs are ready
+function maybe_generate_ssh_config
+    if test "$SSH_CONFIG_GENERATED" = "true"
+        return
+    end
+    if not test -x $SSH_CONFIG_HELPER
+        return
+    end
+    if not test -f $STATUS_FILE
+        return
+    end
+    set phase (jq -r '.phase // ""' $STATUS_FILE 2>/dev/null)
+    switch $phase
+        case instances_ready waiting_for_results running_benchmarks collecting_results destroying failed complete
+            gum log --level info "Generating SSH config for bastion access..."
+            spin --spinner dot --title "Generating SSH config..." -- bash $SSH_CONFIG_HELPER >/dev/null
+            if test $status -eq 0
+                set -g SSH_CONFIG_GENERATED true
+                gum log --level info "SSH config ready: $SSH_CONFIG_FILE"
+            else
+                gum log --level warn "Failed to generate SSH config (Terraform outputs may be unavailable yet)"
+            end
+        case '*'
+            # too early
+    end
+end
+
+# Offer to fetch logs via bastion
+function offer_fetch_logs
+    set prompt $argv[1]
+    if not test -x $FETCH_LOGS_SCRIPT
+        return
+    end
+    if confirm $prompt
+        spin --spinner dot --title "Fetching logs via bastion..." -- bash $FETCH_LOGS_SCRIPT >/dev/null
+        if test $status -eq 0
+            gum log --level info "Logs downloaded (see results/ssh_logs by default)"
+        else
+            gum log --level warn "Log fetch failed; check SSH config and bastion connectivity."
+        end
     end
 end
 
@@ -382,7 +473,7 @@ function select_results_folder
         return
     end
 
-    gum style --foreground 245 "Select results folder:"
+    gum style --foreground 245 "Select results folder:" >&2
     set choice (printf '%s\n' $choices | gum choose)
 
     if test -z "$choice"
@@ -410,13 +501,19 @@ function select_results_folder
 
         if test $pending_count -gt 0
             # Count by provider
-            set aws_pending 0
-            set azure_pending 0
+            set providers
+            set provider_counts
             for ptype in $pending_types
-                if string match -q "Standard_*" $ptype
-                    set azure_pending (math $azure_pending + 1)
+                set provider (string split ":" $ptype)[1]
+                if test -z "$provider"
+                    set provider "unknown"
+                end
+                set idx (contains -i $provider $providers)
+                if test $status -eq 0
+                    set provider_counts[$idx] (math $provider_counts[$idx] + 1)
                 else
-                    set aws_pending (math $aws_pending + 1)
+                    set providers $providers $provider
+                    set provider_counts $provider_counts 1
                 end
             end
 
@@ -426,15 +523,60 @@ function select_results_folder
                 echo "  ○ $ptype" >&2
             end
 
-            set replicas 3
-            set total_instances (math "$pending_count * $replicas")
-            echo >&2
-            gum style --foreground 245 "Will create $total_instances instances ($pending_count types × $replicas replicas)" >&2
-            if test $aws_pending -gt 0
-                gum style --foreground 245 "  AWS: $aws_pending types" >&2
+            # Resolve replicas per provider (defaults: aws=3, azure=2; TF_VAR_replicas applies to both)
+            set base_replicas ""
+            if set -q TF_VAR_replicas
+                set base_replicas $TF_VAR_replicas
             end
-            if test $azure_pending -gt 0
-                gum style --foreground 245 "  Azure: $azure_pending types" >&2
+            if set -q TF_VAR_aws_replicas
+                set aws_replicas $TF_VAR_aws_replicas
+            else if test -n "$base_replicas"
+                set aws_replicas $base_replicas
+            else
+                set aws_replicas 3
+            end
+            if set -q TF_VAR_azure_replicas
+                set azure_replicas $TF_VAR_azure_replicas
+            else if test -n "$base_replicas"
+                set azure_replicas $base_replicas
+            else
+                set azure_replicas 2
+            end
+
+            set total_instances 0
+            for idx in (seq (count $providers))
+                set provider $providers[$idx]
+                set pc $provider_counts[$idx]
+                switch $provider
+                    case aws
+                        set rep $aws_replicas
+                    case azure
+                        set rep $azure_replicas
+                    case '*'
+                        if test -n "$base_replicas"
+                            set rep $base_replicas
+                        else
+                            set rep 1
+                        end
+                end
+                set total_instances (math "$total_instances + ($pc * $rep)")
+            end
+            echo >&2
+            gum style --foreground 245 "Will create $total_instances instances" >&2
+            if test (count $providers) -gt 0
+                for idx in (seq (count $providers))
+                    set provider $providers[$idx]
+                    set pc $provider_counts[$idx]
+                    switch $provider
+                        case aws
+                            set rep $aws_replicas
+                        case azure
+                            set rep $azure_replicas
+                        case '*'
+                            set rep (test -n "$base_replicas"; and echo $base_replicas; or echo 1)
+                    end
+                    gum style --foreground 245 "  $provider: $pc types × $rep replicas" >&2
+                end
             end
         else
             echo >&2
@@ -492,10 +634,10 @@ function start_benchmark
     monitor_benchmark
 end
 
-function nuke_aws_resources
-    gum style --bold --foreground 196 "☢️  NUKE AWS RESOURCES"
+function nuke_resources
+    gum style --bold --foreground 196 "☢️  NUKE CLOUD RESOURCES"
     echo
-    gum style --foreground 245 "This will find and delete ALL ruby-bench-* resources in AWS,"
+    gum style --foreground 245 "This will find and delete ALL ruby-bench-* resources in AWS and Azure,"
     gum style --foreground 245 "regardless of Terraform state."
     echo
 
@@ -510,6 +652,9 @@ function nuke_aws_resources
         gum log --level info "Terraform destroy complete, scanning for orphaned resources..."
     end
 
+    # ==================== AWS Resources ====================
+    gum style --bold --foreground 214 "AWS Resources"
+
     # Find instances
     spin --spinner dot --title "Finding EC2 instances..." -- sleep 1
     set instances (aws ec2 describe-instances \
@@ -519,10 +664,10 @@ function nuke_aws_resources
         --output text 2>/dev/null | string split -n \t)
 
     if test (count $instances) -gt 0
-        gum log --level warn "Found "(count $instances)" instances: $instances"
+        gum log --level warn "Found "(count $instances)" EC2 instances: $instances"
     else
         set instances
-        gum log --level info "No running instances found"
+        gum log --level info "No EC2 instances found"
     end
 
     # Find VPC
@@ -532,7 +677,7 @@ function nuke_aws_resources
         --query 'Vpcs[0].VpcId' \
         --output text 2>/dev/null)
 
-    if test "$vpc_id" != "None" -a -n "$vpc_id"
+    if test "$vpc_id" != "None"; and test -n "$vpc_id"
         gum log --level warn "Found VPC: $vpc_id"
     else
         set vpc_id ""
@@ -551,14 +696,33 @@ function nuke_aws_resources
         gum log --level info "No key pair found"
     end
 
-    # Confirm
-    if test (count $instances) -eq 0 -a -z "$vpc_id" -a "$key_exists" = "no"
-        echo
+    # ==================== Azure Resources ====================
+    echo
+    gum style --bold --foreground 39 "Azure Resources"
+
+    # Check if Azure CLI is available and logged in
+    set azure_rgs
+    if command -q az
+        spin --spinner dot --title "Checking Azure resource groups..." -- sleep 1
+        set azure_rgs (az group list --query "[?name=='ruby-bench-rg'].name" -o tsv 2>/dev/null | string split -n \n)
+        if test (count $azure_rgs) -gt 0
+            gum log --level warn "Found ruby-bench resource groups: $azure_rgs"
+        else
+            gum log --level info "No ruby-bench resource groups found"
+        end
+    else
+        gum log --level info "Azure CLI not installed, skipping Azure"
+    end
+
+    # ==================== Confirmation ====================
+    echo
+
+    # Check if anything to delete
+    if test (count $instances) -eq 0; and test -z "$vpc_id"; and test "$key_exists" = "no"; and test (count $azure_rgs) -eq 0
         gum log --level info "No ruby-bench resources found. Nothing to delete."
         return 0
     end
 
-    echo
     if not confirm --default=false "Delete all these resources?"
         gum log --level info "Cancelled"
         return 0
@@ -566,14 +730,15 @@ function nuke_aws_resources
 
     echo
 
+    # ==================== Delete AWS Resources ====================
     # Terminate instances
     if test (count $instances) -gt 0
-        gum log --level info "Terminating instances..."
+        gum log --level info "Terminating EC2 instances..."
         aws ec2 terminate-instances --region $region --instance-ids $instances > /dev/null 2>&1
 
         spin --spinner dot --title "Waiting for instances to terminate..." -- \
             aws ec2 wait instance-terminated --region $region --instance-ids $instances 2>/dev/null
-        gum log --level info "Instances terminated"
+        gum log --level info "EC2 instances terminated"
     end
 
     # Delete VPC resources (in dependency order)
@@ -639,8 +804,26 @@ function nuke_aws_resources
 
     # Delete key pair
     if test "$key_exists" = "yes"
-        gum log --level info "Deleting key pair..."
+        gum log --level info "Deleting AWS key pair..."
         aws ec2 delete-key-pair --region $region --key-name ruby-bench 2>/dev/null
+    end
+
+    # ==================== Delete Azure Resources ====================
+    if test (count $azure_rgs) -gt 0
+        for rg in $azure_rgs
+            gum log --level info "Deleting Azure resource group $rg (this deletes all contained resources)..."
+            az group delete --name $rg --yes --no-wait >/dev/null 2>&1
+            # Wait until the group is gone to avoid leftovers
+            set wait_secs 0
+            while az group exists --name $rg >/dev/null 2>&1
+                set wait_secs (math $wait_secs + 5)
+                sleep 5
+                if test $wait_secs -ge 600
+                    gum log --level warn "Still waiting for $rg deletion after $wait_secs seconds..."
+                end
+            end
+            gum log --level info "Azure resource group $rg deleted"
+        end
     end
 
     # Final cleanup of local files
@@ -648,6 +831,130 @@ function nuke_aws_resources
 
     echo
     gum log --level info "Done! All ruby-bench resources have been deleted."
+
+    # ==================== List ALL remaining resources in account ====================
+    echo
+    gum style --bold --foreground 245 "Remaining resources in account (all resources, not just ruby-bench):"
+    echo
+
+    # AWS EC2 instances
+    gum style --foreground 214 "AWS EC2 Instances ($region):"
+    set all_instances (aws ec2 describe-instances \
+        --region $region \
+        --filters "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+        --query 'Reservations[].Instances[].[InstanceId,InstanceType,State.Name,Tags[?Key==`Name`].Value|[0]]' \
+        --output text 2>/dev/null)
+    if test -n "$all_instances"
+        echo $all_instances | while read -l line
+            set parts (string split \t $line)
+            set inst_id $parts[1]
+            set inst_type $parts[2]
+            set inst_state $parts[3]
+            set inst_name $parts[4]
+            if test -z "$inst_name"; or test "$inst_name" = "None"
+                set inst_name "(no name)"
+            end
+            echo "  $inst_id  $inst_type  $inst_state  $inst_name"
+        end
+    else
+        echo "  (none)"
+    end
+
+    # AWS VPCs (excluding default)
+    echo
+    gum style --foreground 214 "AWS VPCs ($region):"
+    set all_vpcs (aws ec2 describe-vpcs \
+        --region $region \
+        --query 'Vpcs[?IsDefault==`false`].[VpcId,CidrBlock,Tags[?Key==`Name`].Value|[0]]' \
+        --output text 2>/dev/null)
+    if test -n "$all_vpcs"
+        echo $all_vpcs | while read -l line
+            set parts (string split \t $line)
+            set vpc_id $parts[1]
+            set cidr $parts[2]
+            set vpc_name $parts[3]
+            if test -z "$vpc_name"; or test "$vpc_name" = "None"
+                set vpc_name "(no name)"
+            end
+            echo "  $vpc_id  $cidr  $vpc_name"
+        end
+    else
+        echo "  (none, excluding default VPC)"
+    end
+
+    # AWS Key Pairs
+    echo
+    gum style --foreground 214 "AWS Key Pairs ($region):"
+    set all_keys (aws ec2 describe-key-pairs \
+        --region $region \
+        --query 'KeyPairs[].KeyName' \
+        --output text 2>/dev/null)
+    if test -n "$all_keys"
+        for key in (string split \t $all_keys)
+            echo "  $key"
+        end
+    else
+        echo "  (none)"
+    end
+
+    # AWS NAT Gateways
+    echo
+    gum style --foreground 214 "AWS NAT Gateways ($region):"
+    set all_nats (aws ec2 describe-nat-gateways \
+        --region $region \
+        --filter "Name=state,Values=pending,available" \
+        --query 'NatGateways[].[NatGatewayId,State,Tags[?Key==`Name`].Value|[0]]' \
+        --output text 2>/dev/null)
+    if test -n "$all_nats"
+        echo $all_nats | while read -l line
+            set parts (string split \t $line)
+            set nat_id $parts[1]
+            set nat_state $parts[2]
+            set nat_name $parts[3]
+            if test -z "$nat_name"; or test "$nat_name" = "None"
+                set nat_name "(no name)"
+            end
+            echo "  $nat_id  $nat_state  $nat_name"
+        end
+    else
+        echo "  (none)"
+    end
+
+    # AWS Elastic IPs
+    echo
+    gum style --foreground 214 "AWS Elastic IPs ($region):"
+    set all_eips (aws ec2 describe-addresses \
+        --region $region \
+        --query 'Addresses[].[AllocationId,PublicIp,Tags[?Key==`Name`].Value|[0]]' \
+        --output text 2>/dev/null)
+    if test -n "$all_eips"
+        echo $all_eips | while read -l line
+            set parts (string split \t $line)
+            set eip_id $parts[1]
+            set eip_ip $parts[2]
+            set eip_name $parts[3]
+            if test -z "$eip_name"; or test "$eip_name" = "None"
+                set eip_name "(no name)"
+            end
+            echo "  $eip_id  $eip_ip  $eip_name"
+        end
+    else
+        echo "  (none)"
+    end
+
+    # Azure resource groups
+    if command -q az
+        echo
+        gum style --foreground 39 "Azure Resource Groups:"
+        set all_rgs (az group list --query '[].name' -o tsv 2>/dev/null)
+        if test -n "$all_rgs"
+            for rg in $all_rgs
+                echo "  $rg"
+            end
+        else
+            echo "  (none)"
+        end
+    end
 end
 
 function stop_benchmark
@@ -671,10 +978,10 @@ function stop_benchmark
     # Check for Terraform infrastructure
     set terraform_dir "$SCRIPT_DIR/bench/terraform"
     if test -f "$terraform_dir/terraform.tfstate"
-        set instance_count (cd $terraform_dir && terraform state list 2>/dev/null | grep -c "aws_instance" || echo "0")
+        set instance_count (cd $terraform_dir && terraform state list 2>/dev/null | grep -E "aws_instance|azurerm_linux_virtual_machine" | wc -l | string trim || echo "0")
         if test "$instance_count" -gt 0
             echo
-            gum log --level warn "Found $instance_count EC2 instance(s) still running"
+            gum log --level warn "Found $instance_count cloud instance(s) still running"
             if confirm "Destroy Terraform infrastructure?"
                 spin --spinner dot --title "Destroying infrastructure..." -- sh -c "cd $terraform_dir && terraform destroy -auto-approve > /dev/null 2>&1"
                 if test $status -eq 0
@@ -685,7 +992,7 @@ function stop_benchmark
                 end
             end
         else
-            gum log --level info "No EC2 instances running"
+            gum log --level info "No instances running"
         end
     end
 
@@ -702,7 +1009,7 @@ function show_help
     echo "  start    Start the benchmark and monitor progress"
     echo "  monitor  Monitor an already-running benchmark"
     echo "  stop     Stop running benchmark and destroy infrastructure"
-    echo "  nuke     Delete ALL ruby-bench AWS resources (failsafe cleanup)"
+    echo "  nuke     Delete ALL ruby-bench cloud resources (AWS + Azure failsafe cleanup)"
     echo "  status   Show current status once and exit"
     echo "  help     Show this help message"
     echo
@@ -727,7 +1034,7 @@ switch $cmd
     case stop
         stop_benchmark
     case nuke
-        nuke_aws_resources
+        nuke_resources
     case status
         show_status
     case help --help -h
@@ -739,7 +1046,7 @@ switch $cmd
             exit 1
         end
         # Default: ask what to do
-        set choice (gum choose "Start new benchmark" "Monitor running benchmark" "Stop benchmark" "Nuke AWS resources" "Show status" "Help")
+        set choice (gum choose "Start new benchmark" "Monitor running benchmark" "Stop benchmark" "Nuke cloud resources" "Show status" "Help")
         switch $choice
             case "Start new benchmark"
                 start_benchmark
@@ -747,8 +1054,8 @@ switch $cmd
                 monitor_benchmark
             case "Stop benchmark"
                 stop_benchmark
-            case "Nuke AWS resources"
-                nuke_aws_resources
+            case "Nuke cloud resources"
+                nuke_resources
             case "Show status"
                 show_status
             case "Help"

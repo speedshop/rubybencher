@@ -1,363 +1,489 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "base64"
 require "json"
 require "fileutils"
 require "open3"
 require "optparse"
+require "securerandom"
 require "set"
 require "time"
-require "timeout"
+require "openssl"
+require "cgi"
 
 class BenchmarkOrchestrator
   TERRAFORM_DIR = File.expand_path("terraform", __dir__)
   RESULTS_DIR = File.expand_path("../results", __dir__)
   STATUS_FILE = File.expand_path("../status.json", __dir__)
-  SSH_OPTIONS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"
-  MAX_SSH_RETRIES = 30
-  SSH_RETRY_DELAY = 10
+  INSTANCE_TYPES_FILE = File.expand_path("instance_types.json", __dir__)
+  UPLOAD_CONFIG_FILE = File.join(TERRAFORM_DIR, "upload_config.json")
+  SKIP_TYPES_FILE = File.join(TERRAFORM_DIR, "skip_types.json")
+  RESULT_TIMEOUT = 7200 # seconds
+  POLL_INTERVAL = 20
 
-  def initialize(results_folder: nil)
-    @run_id = results_folder || Time.now.strftime("%Y%m%d-%H%M%S")
+  def initialize(results_folder: nil, replicas: nil, aws_replicas: nil, azure_replicas: nil)
+    @run_id = sanitize_run_id(results_folder || Time.now.strftime("%Y%m%d-%H%M%S"))
     @results_path = File.join(RESULTS_DIR, @run_id)
+    default_replicas = replicas || ENV["TF_VAR_replicas"]
+    @aws_replicas = (aws_replicas || ENV["TF_VAR_aws_replicas"] || default_replicas || "3").to_i
+    @azure_replicas = (azure_replicas || ENV["TF_VAR_azure_replicas"] || default_replicas || "2").to_i
+    @replicas_by_provider = {
+      "aws" => @aws_replicas,
+      "azure" => @azure_replicas
+    }
+    @default_replicas = default_replicas&.to_i
+    @bucket = ENV.fetch("TF_VAR_results_bucket_name", "railsbencher-results")
+    @aws_region = ENV.fetch("TF_VAR_aws_region", ENV.fetch("AWS_REGION", "us-east-1"))
     @failed_instances = []
     @successful_instances = []
-    @instance_status = {}
     @status_mutex = Mutex.new
+    @instance_status = {}
   end
 
   def run
     update_status(phase: "starting", run_id: @run_id)
     setup_results_directory
 
-    # Check for already completed instance types before provisioning
     @skip_types = completed_instance_types
-    unless @skip_types.empty?
-      puts "Skipping already completed instance types: #{@skip_types.join(", ")}"
+    puts "Skipping already completed instance types: #{@skip_types.join(", ")}" unless @skip_types.empty?
+
+    @instance_plan = build_instance_plan
+    if @instance_plan.empty?
+      puts "All instance types already completed. Nothing to run."
+      update_status(phase: "complete", results_path: @results_path, successful: [], skipped: @skip_types)
+      return
     end
+
+    write_skip_file
+    write_upload_config
 
     terraform_apply
-    outputs = terraform_outputs
+    wait_for_results
+    finalize_run
+  rescue StandardError => e
+    update_status(
+      phase: "failed",
+      run_id: @run_id,
+      error: e.message,
+      backtrace: e.backtrace&.take(5)
+    )
+    warn "Benchmark orchestrator failed: #{e.message}"
+    exit 1
+  ensure
+    cleanup_temp_files
+  end
 
-    @ssh_key = File.expand_path(outputs["ssh_key_path"]["value"], TERRAFORM_DIR)
-    @ssh_users = outputs["ssh_user"]["value"] # { "aws" => "ec2-user", "azure" => "azureuser" }
-    @replicas = outputs["replicas"]["value"]
+  private
 
-    # AWS instances
-    @aws_instances = outputs["instance_ips"]["value"]
-    @aws_instance_ids = outputs["instance_ids"]["value"]
-    @aws_instances_by_type = filter_instances_by_type(outputs["instances_by_type"]["value"], @skip_types)
+  def setup_results_directory
+    FileUtils.mkdir_p(@results_path)
+  end
 
-    # Azure instances
-    @azure_instances = outputs["azure_instance_ips"]["value"]
-    @azure_instance_ids = outputs["azure_instance_ids"]["value"]
-    @azure_instances_by_type = filter_instances_by_type(outputs["azure_instances_by_type"]["value"], @skip_types)
-    @azure_resource_group = outputs["azure_resource_group"]["value"]
+  def sanitize_run_id(value)
+    cleaned = value.to_s.gsub(/\e\[[0-9;]*m/, "") # strip ANSI
+    cleaned = cleaned.strip
+    cleaned.gsub(/[^A-Za-z0-9_.-]/, "_")
+  end
 
-    # Combined view (filtered)
-    @instances_by_type = filter_instances_by_type(outputs["all_instances_by_type"]["value"], @skip_types)
-    # Rebuild instances from filtered instances_by_type
-    @instances = @instances_by_type.values.reduce({}, :merge)
+  def load_instance_config
+    JSON.parse(File.read(INSTANCE_TYPES_FILE))
+  end
 
-    # Terminate instances for skipped types immediately to save costs
-    unless @skip_types.empty?
-      skipped_instance_keys = []
-      outputs["all_instances_by_type"]["value"].each do |type_name, type_instances|
-        if @skip_types.include?(type_name)
-          skipped_instance_keys.concat(type_instances.keys)
+  def build_instance_plan
+    config = load_instance_config
+    plan = {}
+    config.each do |provider, types|
+      types.each_key do |type_name|
+        next if skip_type?(provider, type_name)
+
+        replicas = @replicas_by_provider[provider] || @default_replicas || 1
+        (1..replicas).each do |replica|
+          instance_key = "#{type_name}-#{replica}"
+          plan[instance_key] = {
+            provider: provider,
+            type: type_name,
+            replica: replica
+          }
         end
       end
-      unless skipped_instance_keys.empty?
-        puts "Terminating #{skipped_instance_keys.length} instances for skipped types..."
-        terminate_instances(skipped_instance_keys)
+    end
+    plan
+  end
+
+  def skip_type?(provider, type_name)
+    @skip_types.include?(type_name) || @skip_types.include?("#{provider}:#{type_name}")
+  end
+
+  def completed_instance_types
+    return [] unless Dir.exist?(@results_path)
+
+    completed = Set.new
+    Dir.glob(File.join(@results_path, "*")).each do |dir|
+      next unless File.directory?(dir)
+      output_file = File.join(dir, "output.txt")
+      meta_file = File.join(dir, "meta.json")
+
+      instance_type = nil
+      if File.exist?(meta_file)
+        meta = JSON.parse(File.read(meta_file)) rescue {}
+        instance_type = meta["instance_type"] || meta["type"]
+        provider = meta["provider"]
+        if instance_type
+          completed.add(instance_type)
+          completed.add("#{provider}:#{instance_type}") if provider
+        end
+      end
+
+      if instance_type.nil? && File.exist?(output_file) && File.read(output_file).include?("Average of last")
+        base = File.basename(dir).sub(/-\d+$/, "")
+        instance_type = if base.start_with?("Standard-")
+          base.tr("-", "_")
+        else
+          base.sub("-", ".")
+        end
+      end
+
+      completed.add(instance_type) if instance_type
+    end
+    completed.to_a
+  end
+
+  def write_skip_file
+    if @skip_types.empty?
+      FileUtils.rm_f(SKIP_TYPES_FILE)
+    else
+      File.write(SKIP_TYPES_FILE, JSON.pretty_generate(@skip_types))
+    end
+  end
+
+  def write_upload_config
+    config = {
+      run_id: @run_id,
+      bucket: @bucket,
+      region: @aws_region,
+      instances: {}
+    }
+
+    @instance_plan.each do |instance_key, meta|
+      paths = object_paths(instance_key)
+      config[:instances][instance_key] = meta.merge(
+        result: {
+          key: paths[:result_key],
+          url: presign_url(paths[:result_key])
+        },
+        error: {
+          key: paths[:error_key],
+          url: presign_url(paths[:error_key])
+        },
+        heartbeat: {
+          key: paths[:heartbeat_key],
+          url: presign_url(paths[:heartbeat_key])
+        },
+        result_url: presign_url(paths[:result_key]),
+        error_url: presign_url(paths[:error_key]),
+        heartbeat_url: presign_url(paths[:heartbeat_key]),
+        token: SecureRandom.hex(16)
+      )
+    end
+
+    File.write(UPLOAD_CONFIG_FILE, JSON.pretty_generate(config))
+
+    @instance_plan.each_key do |instance_key|
+      @instance_status[instance_key] = { status: "pending" }
+    end
+  end
+
+  def object_paths(instance_key)
+    base = "runs/#{@run_id}/#{instance_key}"
+    {
+      result_key: "#{base}/result.tar.gz",
+      error_key: "#{base}/error.tar.gz",
+      heartbeat_key: "#{base}/heartbeat.json"
+    }
+  end
+
+  def presign_url(key)
+    access_key = ENV["AWS_ACCESS_KEY_ID"] || ENV["AWS_ACCESS_KEY"]
+    secret_key = ENV["AWS_SECRET_ACCESS_KEY"] || ENV["AWS_SECRET_KEY"]
+    token = ENV["AWS_SESSION_TOKEN"]
+    raise "Missing AWS credentials" unless access_key && secret_key
+
+    region = @aws_region
+    service = "s3"
+    algorithm = "AWS4-HMAC-SHA256"
+    amz_date = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = amz_date[0, 8]
+    host = "s3.#{region}.amazonaws.com"
+    expires = 7200
+
+    canonical_uri = "/" + uri_encode(@bucket, encode_slash: true) + "/" + uri_encode(key, encode_slash: true)
+
+    credential_scope = "#{date_stamp}/#{region}/#{service}/aws4_request"
+    credential = "#{access_key}/#{credential_scope}"
+
+    query = {
+      "X-Amz-Algorithm" => algorithm,
+      "X-Amz-Credential" => credential,
+      "X-Amz-Date" => amz_date,
+      "X-Amz-Expires" => expires.to_s,
+      "X-Amz-SignedHeaders" => "host"
+    }
+    query["X-Amz-Security-Token"] = token if token
+
+    canonical_querystring = canonical_query(query)
+    canonical_headers = "host:#{host}\n"
+    signed_headers = "host"
+    payload_hash = "UNSIGNED-PAYLOAD"
+
+    canonical_request = [
+      "PUT",
+      canonical_uri,
+      canonical_querystring,
+      canonical_headers,
+      signed_headers,
+      payload_hash
+    ].join("\n")
+
+    string_to_sign = [
+      algorithm,
+      amz_date,
+      credential_scope,
+      OpenSSL::Digest::SHA256.hexdigest(canonical_request)
+    ].join("\n")
+
+    signing_key = sigv4_signing_key(secret_key, date_stamp, region, service)
+    signature = OpenSSL::HMAC.hexdigest("sha256", signing_key, string_to_sign)
+
+    signed_query = canonical_querystring + "&X-Amz-Signature=#{signature}"
+    "https://#{host}#{canonical_uri}?#{signed_query}"
+  end
+
+  def canonical_query(hash)
+    hash.sort.map do |k, v|
+      "#{uri_encode(k, encode_slash: true)}=#{uri_encode(v, encode_slash: true)}"
+    end.join("&")
+  end
+
+  def uri_encode(val, encode_slash: false)
+    encoded = CGI.escape(val.to_s.encode("UTF-8"))
+    encoded = encoded.gsub("+", "%20")
+    encode_slash ? encoded : encoded.gsub("%2F", "/")
+  end
+
+  def sigv4_signing_key(secret_key, date_stamp, region, service)
+    k_date = hmac("AWS4" + secret_key, date_stamp)
+    k_region = hmac(k_date, region)
+    k_service = hmac(k_region, service)
+    hmac(k_service, "aws4_request")
+  end
+
+  def hmac(key, data)
+    OpenSSL::HMAC.digest("sha256", key, data)
+  end
+
+  def terraform_apply
+    update_status(phase: "terraform_init")
+    terraform_stream(%w[terraform init -input=false], phase: "terraform_init")
+    terraform_stream(%w[terraform apply -auto-approve], phase: "terraform_applying")
+    update_status(phase: "instances_ready", run_id: @run_id, expected: @instance_plan.keys)
+  end
+
+  def terraform_destroy
+    terraform_stream(%w[terraform destroy -auto-approve], phase: "destroying")
+  end
+
+  def terraform_stream(cmd, phase:)
+    Dir.chdir(TERRAFORM_DIR) do
+      Open3.popen2e(*cmd) do |_stdin, stdout_err, wait_thr|
+        stdout_err.each_line do |line|
+          print line
+          update_status(phase: phase, terraform_output: line.strip)
+        end
+        exit_status = wait_thr.value
+        abort("#{cmd.join(' ')} failed") unless exit_status.success?
       end
     end
+  end
 
-    if @instances.empty?
-      puts "All instance types already completed. Nothing to run."
-      terraform_destroy
-      update_status(phase: "complete", results_path: @results_path, successful: [], skipped: @skip_types)
-      exit 0
+  def wait_for_results
+    pending = @instance_plan.keys.dup
+    update_status(
+      phase: "waiting_for_results",
+      run_id: @run_id,
+      expected: @instance_plan.keys,
+      pending: pending,
+      successful: @successful_instances,
+      failed: @failed_instances,
+      next_poll_in: POLL_INTERVAL
+    )
+
+    deadline = Time.now + RESULT_TIMEOUT
+
+    until pending.empty?
+      pending.dup.each do |instance_key|
+        update_heartbeat_status(instance_key)
+        status = check_instance_result(instance_key)
+        next if status == :pending
+
+        pending.delete(instance_key)
+      end
+
+      update_status(
+        phase: "waiting_for_results",
+        run_id: @run_id,
+        expected: @instance_plan.keys,
+        pending: pending,
+        successful: @successful_instances,
+        failed: @failed_instances,
+        next_poll_in: POLL_INTERVAL,
+        last_poll_at: Time.now.iso8601
+      )
+
+      break if pending.empty? || Time.now > deadline
+      sleep POLL_INTERVAL
     end
 
-    update_status(phase: "instances_ready", instances: @instances, instances_by_type: @instances_by_type, skipped: @skip_types)
+    unless pending.empty?
+      pending.each do |instance_key|
+        mark_failed(instance_key, "timeout")
+      end
+    end
+  end
 
-    wait_for_ssh_ready
-    wait_for_setup_complete
-    run_benchmarks_by_type
+  def check_instance_result(instance_key)
+    config = instance_upload_config(instance_key)
+    return :pending unless config
 
+    update_heartbeat_status(instance_key)
+
+    if object_exists?(config[:result][:key])
+      if download_and_extract(instance_key, config[:result][:key])
+        mark_success(instance_key)
+      else
+        mark_failed(instance_key, "download failed")
+      end
+      :done
+    elsif object_exists?(config[:error][:key])
+      if download_error(instance_key, config[:error][:key])
+        mark_failed(instance_key, "error upload")
+      else
+        mark_failed(instance_key, "error download failed")
+      end
+      :done
+    else
+      :pending
+    end
+  end
+
+  def instance_upload_config(instance_key)
+    @upload_config ||= JSON.parse(File.read(UPLOAD_CONFIG_FILE), symbolize_names: true)
+    @upload_config[:instances][instance_key.to_sym] || @upload_config[:instances][instance_key]
+  rescue Errno::ENOENT, JSON::ParserError
+    nil
+  end
+
+  def object_exists?(key)
+    cmd = [
+      "aws", "s3api", "head-object",
+      "--bucket", @bucket,
+      "--key", key,
+      "--region", @aws_region
+    ]
+    system(*cmd, out: File::NULL, err: File::NULL)
+  end
+
+  def fetch_heartbeat(instance_key)
+    config = instance_upload_config(instance_key)
+    return nil unless config && config[:heartbeat]
+
+    key = config[:heartbeat][:key]
+    cmd = ["aws", "s3", "cp", "s3://#{@bucket}/#{key}", "-", "--region", @aws_region]
+    stdout, status = Open3.capture2(*cmd)
+    return nil unless status.success?
+    JSON.parse(stdout) rescue nil
+  end
+
+  def update_heartbeat_status(instance_key)
+    data = fetch_heartbeat(instance_key)
+    return unless data
+
+    @status_mutex.synchronize do
+      @instance_status[instance_key] ||= { status: "pending" }
+      @instance_status[instance_key][:heartbeat_at] = data["timestamp"] || Time.now.utc.iso8601
+      @instance_status[instance_key][:heartbeat_stage] = data["stage"] if data["stage"]
+    end
+  end
+
+  def download_and_extract(instance_key, key)
+    dest_dir = File.join(@results_path, sanitize_instance_key(instance_key))
+    FileUtils.mkdir_p(dest_dir)
+    tar_path = File.join(dest_dir, "result.tar.gz")
+    return false unless system("aws", "s3", "cp", "s3://#{@bucket}/#{key}", tar_path, "--region", @aws_region)
+    return false unless system("tar", "xzf", tar_path, "-C", dest_dir)
+    true
+  end
+
+  def download_error(instance_key, key)
+    dest_dir = File.join(@results_path, sanitize_instance_key(instance_key))
+    FileUtils.mkdir_p(dest_dir)
+    tar_path = File.join(dest_dir, "error.tar.gz")
+    return false unless system("aws", "s3", "cp", "s3://#{@bucket}/#{key}", tar_path, "--region", @aws_region)
+    return false unless system("tar", "xzf", tar_path, "-C", dest_dir)
+    true
+  end
+
+  def mark_success(instance_key)
+    @status_mutex.synchronize do
+      @successful_instances << instance_key
+      @instance_status[instance_key] = { status: "completed" }
+      write_status(phase: "running_benchmarks", successful: @successful_instances, failed: @failed_instances)
+    end
+  end
+
+  def mark_failed(instance_key, reason)
+    @status_mutex.synchronize do
+      @failed_instances << instance_key unless @failed_instances.include?(instance_key)
+      @instance_status[instance_key] = { status: "failed", progress: reason }
+      write_status(phase: "running_benchmarks", successful: @successful_instances, failed: @failed_instances, reason: reason)
+    end
+  end
+
+  def finalize_run
     if @failed_instances.empty?
       update_status(phase: "destroying", message: "All benchmarks succeeded")
       terraform_destroy
       update_status(phase: "complete", results_path: @results_path, successful: @successful_instances)
-      exit 0
     else
       update_status(
         phase: "failed",
         results_path: @results_path,
         failed: @failed_instances,
         successful: @successful_instances,
-        ssh_key: @ssh_key,
-        instances: @instances
+        run_id: @run_id
       )
-      # Don't destroy infrastructure for failed runs to allow debugging
-      exit 1
+      terraform_destroy
     end
   end
 
-  private
+  def cleanup_temp_files
+    FileUtils.rm_f(SKIP_TYPES_FILE)
+    FileUtils.rm_f(UPLOAD_CONFIG_FILE)
+  end
+
+  def sanitize_instance_key(instance_key)
+    instance_key.tr("._", "-").gsub(/[^A-Za-z0-9-]/, "-")
+  end
 
   def update_status(data)
-    @status_mutex.synchronize do
-      status = data.merge(updated_at: Time.now.iso8601)
-      status[:instance_status] = @instance_status unless @instance_status.empty?
-      tmp_file = "#{STATUS_FILE}.tmp"
-      File.write(tmp_file, JSON.pretty_generate(status))
-      File.rename(tmp_file, STATUS_FILE)
-    end
+    @status_mutex.synchronize { write_status(data) }
   end
 
-  def setup_results_directory
-    FileUtils.mkdir_p(@results_path)
-  end
-
-  def completed_instance_types
-    return [] unless Dir.exist?(@results_path)
-
-    # Check which instance types have completed results
-    # Results are stored in dirs like "c6g-medium-1", "Standard-D32pls-v5-1"
-    completed = Set.new
-    Dir.glob(File.join(@results_path, "*")).each do |dir|
-      next unless File.directory?(dir)
-
-      # Check if this result dir has a successful output
-      output_file = File.join(dir, "output.txt")
-      next unless File.exist?(output_file)
-      next unless File.read(output_file).include?("Average of last")
-
-      # Extract instance type from dir name (e.g., "c6g-medium-1" -> "c6g.medium")
-      basename = File.basename(dir)
-      # Remove the replica suffix (-1, -2, -3)
-      type_with_dashes = basename.sub(/-\d+$/, "")
-      # Convert back: "c6g-medium" -> "c6g.medium", "Standard-D32pls-v5" -> "Standard_D32pls_v5"
-      # AWS types use dots, Azure types use underscores
-      if type_with_dashes.start_with?("Standard-")
-        # Azure: Standard-D32pls-v5 -> Standard_D32pls_v5
-        instance_type = type_with_dashes.gsub("-", "_")
-      else
-        # AWS: c6g-medium -> c6g.medium
-        instance_type = type_with_dashes.sub("-", ".")
-      end
-      completed.add(instance_type)
-    end
-    completed.to_a
-  end
-
-  def filter_instances_by_type(instances_by_type, skip_types)
-    return instances_by_type if skip_types.empty?
-
-    instances_by_type.reject { |type_name, _| skip_types.include?(type_name) }
-  end
-
-  def terraform_apply
-    update_status(phase: "terraform_apply")
-    Dir.chdir(TERRAFORM_DIR) do
-      system("terraform init -input=false") || abort("terraform init failed")
-      system("terraform apply -auto-approve") || abort("terraform apply failed")
-    end
-  end
-
-  def terraform_outputs
-    Dir.chdir(TERRAFORM_DIR) do
-      output, = Open3.capture2("terraform output -json")
-      JSON.parse(output)
-    end
-  end
-
-  def terraform_destroy
-    Dir.chdir(TERRAFORM_DIR) do
-      system("terraform destroy -auto-approve")
-    end
-  end
-
-  def terminate_instances(instance_keys)
-    # Separate AWS and Azure instances
-    aws_keys = instance_keys.select { |key| @aws_instance_ids.key?(key) }
-    azure_keys = instance_keys.select { |key| @azure_instance_ids.key?(key) }
-
-    # Terminate AWS instances
-    aws_ids = aws_keys.map { |key| @aws_instance_ids[key] }.compact
-    unless aws_ids.empty?
-      system("aws ec2 terminate-instances --region us-east-1 --instance-ids #{aws_ids.join(" ")} > /dev/null 2>&1")
-    end
-
-    # Terminate Azure instances
-    azure_keys.each do |key|
-      vm_name = "ruby-bench-#{key.gsub("_", "-")}"
-      system("az vm delete --resource-group #{@azure_resource_group} --name #{vm_name} --yes --no-wait > /dev/null 2>&1")
-    end
-
-    # Update status to show instances are terminated
-    @status_mutex.synchronize do
-      instance_keys.each do |key|
-        @instance_status[key] = { status: "terminated", benchmark: nil, progress: nil }
-      end
-    end
-    update_status(phase: "running_benchmarks", instances: @instances)
-  end
-
-  def wait_for_ssh_ready
-    update_status(phase: "waiting_for_ssh", instances: @instances)
-    threads = @instances.map do |instance_key, ip|
-      Thread.new { wait_for_ssh(instance_key, ip) }
-    end
-    threads.each(&:join)
-    update_status(phase: "ssh_ready", instances: @instances)
-  end
-
-  def wait_for_ssh(instance_key, ip)
-    user = ssh_user_for(instance_key)
-    MAX_SSH_RETRIES.times do
-      result = system("ssh -i #{@ssh_key} #{SSH_OPTIONS} #{user}@#{ip} 'echo ready' 2>/dev/null")
-      return true if result
-      sleep SSH_RETRY_DELAY
-    end
-    false
-  end
-
-  def ssh_user_for(instance_key)
-    @azure_instance_ids.key?(instance_key) ? @ssh_users["azure"] : @ssh_users["aws"]
-  end
-
-  def wait_for_setup_complete
-    update_status(phase: "waiting_for_docker_setup", instances: @instances)
-    threads = @instances.map do |instance_key, ip|
-      Thread.new { wait_for_setup(instance_key, ip) }
-    end
-    threads.each(&:join)
-    update_status(phase: "docker_ready", instances: @instances)
-  end
-
-  def wait_for_setup(instance_key, ip)
-    user = ssh_user_for(instance_key)
-    30.times do
-      result = ssh_command(instance_key, ip, "test -f /home/#{user}/.setup_complete && echo done")
-      return true if result&.strip == "done"
-      sleep 10
-    end
-    false
-  end
-
-  def run_benchmarks_by_type
-    update_status(phase: "running_benchmarks", instances: @instances)
-
-    # Each instance type gets its own coordinator thread
-    type_threads = @instances_by_type.map do |type_name, type_instances|
-      Thread.new do
-        # Run all replicas of this type in parallel
-        replica_threads = type_instances.map do |instance_key, ip|
-          Thread.new { run_benchmark(instance_key, ip) }
-        end
-        replica_threads.each(&:join)
-
-        # All replicas of this type are done - collect results and terminate
-        collect_results_for_type(type_name, type_instances)
-        terminate_instances(type_instances.keys)
-      end
-    end
-
-    type_threads.each(&:join)
-  end
-
-  def run_benchmark(instance_key, ip)
-    @instance_status[instance_key] = { status: "starting", benchmark: nil, progress: nil }
-    update_status(phase: "running_benchmarks", instances: @instances)
-
-    ssh_command(instance_key, ip, "mkdir -p ~/results")
-
-    # Write benchmark script to remote using base64 (avoids all quoting issues)
-    # Note: nodejs is required for shipit benchmark (uses CoffeeScript/Sprockets)
-    benchmark_script = <<~'SCRIPT'
-      #!/bin/bash
-      docker run --rm \
-        -e RUBY_YJIT_ENABLE=1 \
-        -v ~/results:/results \
-        ruby:3.4 \
-        bash -c "
-          apt-get update && apt-get install -y nodejs npm > /dev/null 2>&1 &&
-          git clone https://github.com/ruby/ruby-bench /ruby-bench &&
-          cd /ruby-bench &&
-          ./run_benchmarks.rb 2>&1 | tee /results/output.txt &&
-          cp -r *.csv *.json /results/ 2>/dev/null || true
-        "
-    SCRIPT
-
-    encoded_script = Base64.strict_encode64(benchmark_script)
-    ssh_command(instance_key, ip, "echo #{encoded_script} | base64 -d > ~/bench_runner.sh && chmod +x ~/bench_runner.sh")
-
-    # Run benchmark in background on remote, capture PID for monitoring
-    pid_result = ssh_command(instance_key, ip, "nohup ~/bench_runner.sh > ~/results/nohup.log 2>&1 & echo $!")
-    benchmark_pid = pid_result&.strip
-
-    @instance_status[instance_key] = { status: "running", benchmark: nil, progress: "pulling image" }
-    update_status(phase: "running_benchmarks", instances: @instances)
-
-    # Poll for progress until complete - check if the nohup process is still running
-    loop do
-      sleep 10
-      # Use double quotes to avoid quoting issues with ssh_command's single-quote wrapping
-      progress = ssh_command(instance_key, ip, "grep -o \"Running benchmark.*([0-9]*/[0-9]*)\" ~/results/output.txt 2>/dev/null | tail -1")
-      if progress && (match = progress.match(/Running benchmark "([^"]+)" \((\d+)\/(\d+)\)/))
-        @instance_status[instance_key] = { status: "running", benchmark: match[1], progress: "#{match[2]}/#{match[3]}" }
-      end
-      update_status(phase: "running_benchmarks", instances: @instances)
-
-      # Check if the benchmark process is still running (either the shell or docker)
-      process_check = ssh_command(instance_key, ip, "ps -p #{benchmark_pid} -o pid= 2>/dev/null || docker ps -q 2>/dev/null | head -1")
-      break if process_check&.strip&.empty?
-    end
-
-    # Check final result
-    result = ssh_command(instance_key, ip, "test -f ~/results/output.txt && grep -q \"Average of last\" ~/results/output.txt && echo success")
-
-    @status_mutex.synchronize do
-      if result&.strip == "success"
-        @instance_status[instance_key] = { status: "completed", benchmark: nil, progress: nil }
-        @successful_instances << instance_key
-      else
-        @instance_status[instance_key] = { status: "failed", benchmark: nil, progress: nil }
-        @failed_instances << instance_key
-      end
-    end
-    update_status(phase: "running_benchmarks", instances: @instances)
-  end
-
-  def collect_results_for_type(type_name, type_instances)
-    type_instances.each do |instance_key, ip|
-      # instance_key is like "c6g.medium-1" or "Standard_D32pls_v5-1" -> create dir with dots/underscores replaced
-      instance_results_dir = File.join(@results_path, instance_key.gsub(".", "-").gsub("_", "-"))
-      FileUtils.mkdir_p(instance_results_dir)
-
-      user = ssh_user_for(instance_key)
-      scp_cmd = "scp -i #{@ssh_key} #{SSH_OPTIONS} -r #{user}@#{ip}:~/results/* #{instance_results_dir}/ 2>/dev/null"
-      @status_mutex.synchronize do
-        @failed_instances << instance_key unless system(scp_cmd) || @failed_instances.include?(instance_key)
-      end
-    end
-  end
-
-  def ssh_command(instance_key, ip, command, timeout_secs: 600)
-    user = ssh_user_for(instance_key)
-    full_cmd = "ssh -i #{@ssh_key} #{SSH_OPTIONS} #{user}@#{ip} '#{command}'"
-    output = nil
-    status = nil
-    Timeout.timeout(timeout_secs) do
-      output, status = Open3.capture2e(full_cmd)
-    end
-    status.success? ? output : nil
-  rescue Timeout::Error
-    nil
+  def write_status(data)
+    status = data.merge(updated_at: Time.now.iso8601)
+    status[:instance_status] = @instance_status unless @instance_status.empty?
+    tmp_file = "#{STATUS_FILE}.tmp"
+    File.write(tmp_file, JSON.pretty_generate(status))
+    File.rename(tmp_file, STATUS_FILE)
   end
 end
 
@@ -366,6 +492,15 @@ OptionParser.new do |opts|
   opts.banner = "Usage: bench.rb [options]"
   opts.on("--results-folder FOLDER", "Use existing results folder instead of creating new one") do |folder|
     options[:results_folder] = folder
+  end
+  opts.on("--replicas N", Integer, "Override replica count for all providers") do |n|
+    options[:replicas] = n
+  end
+  opts.on("--aws-replicas N", Integer, "Override AWS replica count") do |n|
+    options[:aws_replicas] = n
+  end
+  opts.on("--azure-replicas N", Integer, "Override Azure replica count") do |n|
+    options[:azure_replicas] = n
   end
 end.parse!
 

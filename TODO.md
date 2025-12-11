@@ -1,10 +1,5 @@
 # TODO
 
-## AWS EC2 Instance Types
-- [ ] c7g.medium (Graviton3)
-- [ ] c7i.large (Intel Sapphire Rapids)
-- [ ] c7a.large
-
 ## Cloud Providers
 - [ ] AWS Fargate
 - [ ] Heroku
