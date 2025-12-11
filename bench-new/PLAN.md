@@ -170,25 +170,26 @@ At this point, we should be able to start doing an integration test between a lo
    - Use current unix timestamp
 
 3. Implement config file parsing
-   - Read JSON config with instance types per provider
-   - Filter to only requested providers
+   - Read JSON config with instance types per provider.
+   - Config files live in a config directory (bench-new/config)
+   - Only start infra for a provider if it was requested in the config
 
 4. Implement infrastructure standup
    - Run terraform for meta infrastructure
    - Capture outputs (orchestrator URL, API key)
-   - Run terraform for each provider in parallel
+   - Run terraform for each provider (as needed) in parallel
 
 5. Implement orchestrator initialization
-   - POST instance type config to `/runs`
+   - POST instance type config to `/run`
    - Wait for 200 response
 
 6. Implement status polling
-   - Poll `/status` endpoint
+   - Poll `/run/:id` endpoint
    - Display progress to terminal using gum
    - Show which instances are running, completed, failed
 
 7. Implement result retrieval
-   - When `/status` returns complete, get gzip URL from `/results`
+   - When `/run/:id` returns complete, get gzip URL
    - Download and extract to `results/<run-id>/`
 
 8. Create nuke script in `nuke/nuke.fish`
@@ -201,7 +202,7 @@ At this point, we should be able to start doing an integration test between a lo
 
 9. Add cleanup on interrupt
    - Trap SIGINT in master script
-   - Offer to run nuke script on Ctrl+C
+   - Offer to run nuke script (gum confirm)
 
 ### Local Provider Focus
 - Master script starts with local provider only

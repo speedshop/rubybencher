@@ -1,0 +1,12 @@
+{
+  "ruby_version": "3.4.1",
+  "runs_per_instance_type": 5,
+  "aws": [
+    "c8g.medium",
+    "c8g.large",
+    "c8g.xlarge",
+    "c7g.medium",
+    "c7g.large",
+    "c7g.xlarge"
+  ]
+}
