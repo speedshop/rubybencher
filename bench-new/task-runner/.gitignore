@@ -1,0 +1,12 @@
+# Temporary files
+*.log
+*.tmp
+/tmp/
+
+# Test artifacts
+/test-output/
+*.tar.gz
+
+# Work directories
+/work/
+task-runner-*/

@@ -1,0 +1,47 @@
+#!/usr/bin/env fish
+
+echo "🚀 Starting Rails Bencher Orchestrator"
+echo ""
+
+# Check if Docker is running
+if not docker info > /dev/null 2>&1
+    echo "❌ Docker is not running. Please start Docker first."
+    exit 1
+end
+
+# Start PostgreSQL
+echo "📦 Starting PostgreSQL container..."
+docker-compose up -d
+
+# Wait for PostgreSQL to be ready
+echo "⏳ Waiting for PostgreSQL to be ready..."
+sleep 3
+
+# Check if database exists
+if not rails db:version > /dev/null 2>&1
+    echo "📊 Creating database..."
+    rails db:create
+    rails db:migrate
+else
+    echo "📊 Running migrations..."
+    rails db:migrate
+end
+
+echo ""
+echo "✅ Setup complete!"
+echo ""
+echo "Starting services:"
+echo "  - Rails server: http://localhost:3000"
+echo "  - Dashboard: http://localhost:3000"
+echo "  - Background jobs: bin/jobs"
+echo ""
+echo "Press Ctrl+C to stop"
+echo ""
+
+# Start both services (requires foreman or bin/dev)
+if test -f bin/dev
+    bin/dev
+else
+    echo "Starting Rails server and background jobs separately..."
+    rails server
+end

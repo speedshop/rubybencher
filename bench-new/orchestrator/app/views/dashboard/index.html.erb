@@ -1,0 +1,158 @@
+<div class="container mx-auto px-4 py-8">
+  <h1 class="text-4xl font-bold mb-8">Rails Bencher Orchestrator</h1>
+
+  <% if @run %>
+    <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-2xl font-semibold">Current Run</h2>
+        <% if @run.running? %>
+          <%= form_with url: stop_run_path(@run), method: :post, class: "inline" do %>
+            <%= submit_tag "End Run Early", class: "bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded", data: { confirm: "Are you sure you want to end this run early?" } %>
+          <% end %>
+        <% end %>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <p class="text-gray-600">Run ID</p>
+          <p class="text-xl font-semibold"><%= @run.external_id %></p>
+        </div>
+        <div>
+          <p class="text-gray-600">Status</p>
+          <p class="text-xl font-semibold">
+            <span class="<%= status_badge_class(@run.status) %>">
+              <%= @run.status.titleize %>
+            </span>
+          </p>
+        </div>
+        <div>
+          <p class="text-gray-600">Ruby Version</p>
+          <p class="text-xl font-semibold"><%= @run.ruby_version %></p>
+        </div>
+        <div>
+          <p class="text-gray-600">Runs Per Instance Type</p>
+          <p class="text-xl font-semibold"><%= @run.runs_per_instance_type %></p>
+        </div>
+      </div>
+
+      <% if @run.gzip_url %>
+        <div class="mt-4">
+          <a href="<%= @run.gzip_url %>" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded inline-block">
+            Download Results
+          </a>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <h3 class="text-xl font-semibold mb-4">Task Statistics</h3>
+      <div class="grid grid-cols-3 md:grid-cols-6 gap-4">
+        <div class="text-center">
+          <p class="text-3xl font-bold"><%= @task_stats[:total] %></p>
+          <p class="text-gray-600">Total</p>
+        </div>
+        <div class="text-center">
+          <p class="text-3xl font-bold text-gray-500"><%= @task_stats[:pending] %></p>
+          <p class="text-gray-600">Pending</p>
+        </div>
+        <div class="text-center">
+          <p class="text-3xl font-bold text-blue-500"><%= @task_stats[:claimed] %></p>
+          <p class="text-gray-600">Claimed</p>
+        </div>
+        <div class="text-center">
+          <p class="text-3xl font-bold text-yellow-500"><%= @task_stats[:running] %></p>
+          <p class="text-gray-600">Running</p>
+        </div>
+        <div class="text-center">
+          <p class="text-3xl font-bold text-green-500"><%= @task_stats[:completed] %></p>
+          <p class="text-gray-600">Completed</p>
+        </div>
+        <div class="text-center">
+          <p class="text-3xl font-bold text-red-500"><%= @task_stats[:failed] %></p>
+          <p class="text-gray-600">Failed</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-6">
+      <h3 class="text-xl font-semibold mb-4">Tasks</h3>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Provider</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instance Type</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Run #</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Benchmark</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Runner ID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Heartbeat</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <% @tasks.each do |task| %>
+              <tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><%= task.id %></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><%= task.provider %></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><%= task.instance_type %></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><%= task.run_number %></td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="<%= task_status_badge_class(task.status) %>">
+                    <%= task.status.titleize %>
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <% if task.progress_pct %>
+                    <div class="flex items-center">
+                      <div class="w-full bg-gray-200 rounded-full h-2.5 mr-2">
+                        <div class="bg-blue-600 h-2.5 rounded-full" style="width: <%= task.progress_pct %>%"></div>
+                      </div>
+                      <span><%= task.progress_pct %>%</span>
+                    </div>
+                  <% else %>
+                    -
+                  <% end %>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><%= task.current_benchmark || '-' %></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono"><%= task.runner_id&.truncate(12) || '-' %></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <%= task.heartbeat_at ? time_ago_in_words(task.heartbeat_at) + ' ago' : '-' %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mt-4 text-gray-600 text-sm">
+      <p>Auto-refreshes every 5 seconds</p>
+    </div>
+  <% else %>
+    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+      <div class="flex">
+        <div class="flex-shrink-0">
+          <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+        </div>
+        <div class="ml-3">
+          <p class="text-sm text-yellow-700">
+            No run currently in progress. Start a new run via the API.
+          </p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>
+
+<%= turbo_stream_from "dashboard" %>
+
+<script>
+  // Auto-refresh every 5 seconds
+  setInterval(() => {
+    Turbo.visit(window.location, { action: "replace" });
+  }, 5000);
+</script>

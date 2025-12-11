@@ -1,0 +1,9 @@
+# Copy this file to terraform.tfvars and fill in the values
+
+aws_region       = "us-east-1"
+instance_type    = "t3.small"
+key_name         = "your-ssh-key-name"
+api_key          = "your-secure-api-key-here"
+rails_master_key = "value-from-config/master.key"
+postgres_password = "your-secure-postgres-password"
+s3_bucket_prefix = "railsbencher-results"
