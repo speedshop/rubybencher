@@ -402,9 +402,9 @@ function start_local_task_runners
             set mock_flag "--mock"
         end
 
-        set -l debug_flags ""
+        set -l debug_flags
         if test "$DEBUG" = true
-            set debug_flags "--debug --no-exit"
+            set debug_flags --debug --no-exit
         end
 
         docker run -d \

@@ -250,15 +250,10 @@ function cleanup_local_containers
         log_success "No task runner containers found"
     end
 
-    # Clean up dangling images (optional)
-    set -l dangling (docker images -q -f "dangling=true" 2>/dev/null)
-
-    if test -n "$dangling"
-        if test "$FORCE" = true; or gum confirm "Remove dangling Docker images?"
-            docker image prune -f 2>/dev/null || true
-            log_success "Dangling images removed"
-        end
-    end
+    # Clean up dangling images (always)
+    log_info "Removing dangling Docker images..."
+    docker image prune -f 2>/dev/null || true
+    log_success "Dangling images removed"
 end
 
 function cleanup_local_files
