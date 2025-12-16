@@ -1,6 +1,9 @@
 # A Cross-Cloud Ruby Benchmark
 
-This project runs Ruby benchmarks on different cloud providers. Use it to find the fastest cloud instance for your Ruby apps.
+<img width="664" height="495" alt="Screenshot 2025-12-16 at 10 59 07" src="https://github.com/user-attachments/assets/f99bd8b9-d9fd-4a63-a057-0ecd91873ebf" />
+
+This project runs Ruby benchmarks on different cloud providers. Use
+it to find the fastest cloud instance for your Ruby apps.
 
 Results are posted to [https://speedshop.co/rubybench](https://speedshop.co/rubybench).
 
