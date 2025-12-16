@@ -24,7 +24,7 @@ function print_usage
     echo "  -c, --config FILE         Config file path (required)"
     echo "  -k, --api-key KEY         API key (generated randomly if not provided)"
     echo "  -p, --provider PROVIDER   Only run for specific provider (aws, azure, local)"
-    echo "  --local-orchestrator      Run orchestrator locally via docker-compose"
+    echo "  --local-orchestrator      Run orchestrator locally via docker compose"
     echo "  --skip-infra              Skip terraform, use existing infrastructure"
     echo "  --mock                    Run mock benchmark instead of real benchmark"
     echo "  --debug                   Enable debug mode (verbose output, keeps task runners alive)"
@@ -176,7 +176,7 @@ function start_local_orchestrator
         return 0
     end
 
-    log_info "Starting local orchestrator via docker-compose..."
+    log_info "Starting local orchestrator via docker compose..."
 
     set -l orchestrator_dir "$BENCH_DIR/orchestrator"
 
@@ -186,20 +186,20 @@ function start_local_orchestrator
     end
 
     # Check if already running with same API key
-    set -l running_containers (docker-compose -f "$orchestrator_dir/docker-compose.yml" ps -q web 2>/dev/null)
+    set -l running_containers (docker compose -f "$orchestrator_dir/docker-compose.yml" ps -q web 2>/dev/null)
     if test -n "$running_containers"
         # Stop existing containers to ensure API key is updated
         log_info "Stopping existing orchestrator to apply new API key..."
-        docker-compose -f "$orchestrator_dir/docker-compose.yml" down 2>/dev/null
+        docker compose -f "$orchestrator_dir/docker-compose.yml" down 2>/dev/null
     end
 
     # Start the stack with the API key
     log_info "Using API key: $API_KEY"
-    gum spin --spinner dot --title "Starting docker-compose stack..." -- \
-        env API_KEY="$API_KEY" docker-compose -f "$orchestrator_dir/docker-compose.yml" up -d --build
+    gum spin --spinner dot --title "Starting docker compose stack..." -- \
+        env API_KEY="$API_KEY" docker compose -f "$orchestrator_dir/docker-compose.yml" up -d --build
 
     if test $status -ne 0
-        log_error "Failed to start docker-compose stack"
+        log_error "Failed to start docker compose stack"
         exit 1
     end
 
@@ -218,7 +218,7 @@ function stop_local_orchestrator
 
     set -l orchestrator_dir "$BENCH_DIR/orchestrator"
 
-    docker-compose -f "$orchestrator_dir/docker-compose.yml" down
+    docker compose -f "$orchestrator_dir/docker-compose.yml" down
 
     log_success "Local orchestrator stopped"
 end
@@ -695,7 +695,7 @@ function main
         echo "  Provider filter: $PROVIDER_FILTER"
     end
     if test "$LOCAL_ORCHESTRATOR" = true
-        echo "  Mode: Local orchestrator (docker-compose)"
+        echo "  Mode: Local orchestrator (docker compose)"
     end
     echo ""
 

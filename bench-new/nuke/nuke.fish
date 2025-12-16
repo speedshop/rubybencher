@@ -232,7 +232,7 @@ function cleanup_local_containers
         log_info "Stopping orchestrator containers..."
 
         cd "$orchestrator_dir"
-        docker-compose down -v 2>/dev/null || true
+        docker compose down -v 2>/dev/null || true
         cd -
 
         log_success "Orchestrator containers stopped"
