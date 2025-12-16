@@ -389,40 +389,48 @@ function start_local_task_runners
         set container_orchestrator_url "http://host.docker.internal:3000"
     end
 
-    # Start a task runner for each instance type in the local config
+    # Get the number of task runners to start for local provider
+    set -l runner_count (get_task_runner_count "local")
+    log_info "Starting $runner_count task runner(s) per instance type..."
+
+    # Start task runners for each instance type in the local config
     for i in (seq 0 (math (cat "$CONFIG_FILE" | jq '.local | length') - 1))
         set -l instance_type (cat "$CONFIG_FILE" | jq -r ".local[$i].instance_type")
         set -l instance_alias (cat "$CONFIG_FILE" | jq -r ".local[$i].alias")
-        set -l container_name "task-runner-local-$instance_alias-$RUN_ID"
 
-        log_info "Starting task runner for local/$instance_alias ($instance_type)..."
+        # Start the configured number of task runners for this instance type
+        for runner_idx in (seq 1 $runner_count)
+            set -l container_name "task-runner-local-$instance_alias-$runner_idx-$RUN_ID"
 
-        set -l mock_flag ""
-        if test "$MOCK_BENCHMARK" = true
-            set mock_flag "--mock"
+            log_info "Starting task runner $runner_idx/$runner_count for local/$instance_alias ($instance_type)..."
+
+            set -l mock_flag ""
+            if test "$MOCK_BENCHMARK" = true
+                set mock_flag "--mock"
+            end
+
+            set -l debug_flags
+            if test "$DEBUG" = true
+                set debug_flags --debug --no-exit
+            end
+
+            docker run -d \
+                --name "$container_name" \
+                --add-host=host.docker.internal:host-gateway \
+                task-runner:$ruby_version \
+                --orchestrator-url "$container_orchestrator_url" \
+                --api-key "$API_KEY" \
+                --run-id "$RUN_ID" \
+                --provider "local" \
+                --instance-type "$instance_type" \
+                $mock_flag $debug_flags >/dev/null
+            or begin
+                log_error "Failed to start task runner for $instance_alias"
+                exit 1
+            end
+
+            log_success "Started task runner: $container_name"
         end
-
-        set -l debug_flags
-        if test "$DEBUG" = true
-            set debug_flags --debug --no-exit
-        end
-
-        docker run -d \
-            --name "$container_name" \
-            --add-host=host.docker.internal:host-gateway \
-            task-runner:$ruby_version \
-            --orchestrator-url "$container_orchestrator_url" \
-            --api-key "$API_KEY" \
-            --run-id "$RUN_ID" \
-            --provider "local" \
-            --instance-type "$instance_type" \
-            $mock_flag $debug_flags >/dev/null
-        or begin
-            log_error "Failed to start task runner for $instance_alias"
-            exit 1
-        end
-
-        log_success "Started task runner: $container_name"
     end
 end
 
@@ -440,6 +448,32 @@ function stop_local_task_runners
     end
 end
 
+function get_task_runner_count
+    # Get the number of task runners to start for a given provider
+    # Supports:
+    #   task_runners.count: 3              (applies to all providers)
+    #   task_runners.count.local: 3        (provider-specific)
+    # Defaults to 1 if not specified
+    set -l provider $argv[1]
+
+    # First check for provider-specific count
+    set -l provider_count (cat "$CONFIG_FILE" | jq -r ".task_runners.count.$provider // empty")
+    if test -n "$provider_count"; and test "$provider_count" != "null"
+        echo $provider_count
+        return
+    end
+
+    # Then check for global count (if count is a number, not an object)
+    set -l global_count (cat "$CONFIG_FILE" | jq -r 'if .task_runners.count | type == "number" then .task_runners.count else empty end')
+    if test -n "$global_count"; and test "$global_count" != "null"
+        echo $global_count
+        return
+    end
+
+    # Default to 1
+    echo 1
+end
+
 function filter_config_for_provider
     set -l config_content (cat "$CONFIG_FILE")
 
@@ -448,6 +482,7 @@ function filter_config_for_provider
         set -l filtered (echo $config_content | jq --arg provider "$PROVIDER_FILTER" '{
             ruby_version: .ruby_version,
             runs_per_instance_type: .runs_per_instance_type,
+            task_runners: .task_runners,
             ($provider): .[$provider]
         } | with_entries(select(.value != null))')
 
