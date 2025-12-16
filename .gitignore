@@ -31,4 +31,10 @@ site/public/
 
 # Runtime files
 status.json
-bench.log
+*.log
+
+# Benchmark results
+results/
+
+# Rails logs
+bench-new/orchestrator/log/

@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: bench-new/orchestrator
+
+      - name: Orchestrator Tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/orchestrator_test
+          RAILS_ENV: test
+        run: |
+          cd bench-new/orchestrator
+          bin/rails db:create db:schema:load
+          bin/rails test
+
+      - name: Task Runner Tests
+        run: |
+          cd bench-new/task-runner
+          bundle install
+          bundle exec ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require "./#{f}" }'
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Fish and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fish jq
+
+      - name: Start Services
+        run: |
+          cd bench-new/orchestrator
+          docker compose up -d
+          sleep 15
+
+      - name: Wait for Orchestrator
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost:3000/up; then
+              echo "Orchestrator is ready"
+              exit 0
+            fi
+            echo "Waiting for orchestrator... ($i/30)"
+            sleep 2
+          done
+          echo "Orchestrator failed to start"
+          docker compose -f bench-new/orchestrator/docker-compose.yml logs
+          exit 1
+
+      - name: Test API Lifecycle
+        run: |
+          cd bench-new/orchestrator
+          ./test/integration/api_lifecycle_test.sh
+
+  e2e-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Fish Shell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fish jq
+
+      - name: Install gum
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+          sudo apt update && sudo apt install -y gum
+
+      - name: Full E2E with Mock Benchmark
+        run: |
+          fish bench-new/master/run.fish \
+            -c bench-new/config/example.json \
+            --local-orchestrator \
+            --mock \
+            --non-interactive
+
+      - name: Verify Results
+        run: |
+          echo "=== Results Directory ==="
+          ls -la results/
+          echo "=== Finding output files ==="
+          find results -name "output.txt" -exec echo "Found: {}" \; -exec cat {} \;
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Validate Infrastructure Configs
+        run: |
+          cd bench-new/infrastructure/meta
+          terraform init -backend=false
+          terraform validate
+
+  site-generator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+
+      - name: Setup Sample Results
+        run: |
+          mkdir -p results/ci-test/local-docker-1
+          mkdir -p site/static/css site/static/js
+          cat > results/ci-test/local-docker-1/output.txt << 'EOF'
+          Running benchmark "app_aobench" (1/1)
+          + taskset -c 0 /usr/local/bin/ruby -I harness /ruby-bench/benchmarks/app_aobench.rb
+          ruby 3.4.1 (2024-12-25 revision abcd1234) +YJIT +PRISM [x86_64-linux]
+          itr:   time
+           #1: 1500ms
+           #2: 1200ms
+           #3: 1100ms
+           #4: 1000ms
+           #5: 1050ms
+          Average of last 3, non-warmup iters: 1050ms
+          EOF
+          cat > results/ci-test/local-docker-1/metadata.json << 'EOF'
+          {"provider":"local","instance_type":"docker","ruby_version":"3.4.1"}
+          EOF
+
+      - name: Generate Report
+        run: |
+          cd site
+          ruby generate_report.rb
+
+      - name: Verify Output
+        run: |
+          test -f site/public/index.html || (echo "index.html not generated" && exit 1)
+          grep -q "app_aobench" site/public/index.html || (echo "Benchmark not found in report" && exit 1)
+          echo "Report generated successfully"

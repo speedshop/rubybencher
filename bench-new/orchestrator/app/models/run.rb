@@ -10,6 +10,10 @@ class Run < ApplicationRecord
 
   scope :running, -> { where(status: 'running') }
 
+  def self.current
+    running.order(created_at: :desc).first
+  end
+
   def completed?
     status == 'completed'
   end

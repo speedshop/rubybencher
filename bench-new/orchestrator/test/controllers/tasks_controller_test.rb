@@ -7,8 +7,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     @task = @run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
   end
 
-  test "POST /tasks/claim assigns a task" do
-    post tasks_claim_path,
+  test "POST /runs/:run_id/tasks/claim assigns a task" do
+    post "/runs/#{@run.external_id}/tasks/claim",
       params: { provider: "aws", instance_type: "c8g.medium", runner_id: "i-12345" },
       headers: { 'Authorization' => "Bearer #{@api_key}" },
       as: :json
@@ -26,10 +26,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "i-12345", @task.runner_id
   end
 
-  test "POST /tasks/claim returns wait when tasks are in progress" do
+  test "POST /runs/:run_id/tasks/claim returns wait when tasks are in progress" do
     @task.claim!("other-runner")
 
-    post tasks_claim_path,
+    post "/runs/#{@run.external_id}/tasks/claim",
       params: { provider: "aws", instance_type: "c8g.medium", runner_id: "i-12345" },
       headers: { 'Authorization' => "Bearer #{@api_key}" },
       as: :json
@@ -41,11 +41,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal 30, json['retry_after_seconds']
   end
 
-  test "POST /tasks/claim returns done when all tasks completed" do
+  test "POST /runs/:run_id/tasks/claim returns done when all tasks completed" do
     @task.claim!("runner-1")
     @task.complete!("results/1/task_1.tar.gz")
 
-    post tasks_claim_path,
+    post "/runs/#{@run.external_id}/tasks/claim",
       params: { provider: "aws", instance_type: "c8g.medium", runner_id: "i-12345" },
       headers: { 'Authorization' => "Bearer #{@api_key}" },
       as: :json
@@ -56,8 +56,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "done", json['status']
   end
 
-  test "POST /tasks/claim requires authentication" do
-    post tasks_claim_path,
+  test "POST /runs/:run_id/tasks/claim requires authentication" do
+    post "/runs/#{@run.external_id}/tasks/claim",
       params: { provider: "aws", instance_type: "c8g.medium", runner_id: "i-12345" },
       as: :json
 

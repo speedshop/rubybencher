@@ -15,6 +15,7 @@ set -g SKIP_INFRA false
 set -g DEBUG false
 set -g API_KEY ""
 set -g MOCK_BENCHMARK false
+set -g NON_INTERACTIVE false
 
 function print_usage
     echo "Usage: run.fish [OPTIONS]"
@@ -27,6 +28,7 @@ function print_usage
     echo "  --skip-infra              Skip terraform, use existing infrastructure"
     echo "  --mock                    Run mock benchmark instead of real benchmark"
     echo "  --debug                   Enable debug mode (verbose output, keeps task runners alive)"
+    echo "  --non-interactive         Skip all interactive prompts (for CI/automation)"
     echo "  -h, --help                Show this help"
     echo ""
     echo "Environment Variables:"
@@ -80,6 +82,8 @@ function parse_args
                 set -g MOCK_BENCHMARK true
             case --debug
                 set -g DEBUG true
+            case --non-interactive
+                set -g NON_INTERACTIVE true
             case -h --help
                 print_usage
                 exit 0
@@ -257,9 +261,11 @@ function setup_infrastructure
         terraform -chdir="$tf_dir" plan -out=tfplan
 
     echo ""
-    if not gum confirm "Apply infrastructure changes?"
-        log_warning "Infrastructure setup cancelled"
-        exit 0
+    if test "$NON_INTERACTIVE" = false
+        if not gum confirm "Apply infrastructure changes?"
+            log_warning "Infrastructure setup cancelled"
+            exit 0
+        end
     end
 
     gum spin --spinner dot --title "Applying infrastructure..." -- \
@@ -652,8 +658,10 @@ function cleanup_on_interrupt
     # Always stop local task runners if they were started
     stop_local_task_runners
 
-    if gum confirm "Run nuke script to clean up infrastructure?"
-        fish "$BENCH_DIR/nuke/nuke.fish"
+    if test "$NON_INTERACTIVE" = false
+        if gum confirm "Run nuke script to clean up infrastructure?"
+            fish "$BENCH_DIR/nuke/nuke.fish"
+        end
     end
 
     exit 130
@@ -738,8 +746,10 @@ function main
 
     # Offer to clean up infrastructure
     echo ""
-    if gum confirm "Run nuke script to clean up infrastructure?"
-        fish "$BENCH_DIR/nuke/nuke.fish"
+    if test "$NON_INTERACTIVE" = false
+        if gum confirm "Run nuke script to clean up infrastructure?"
+            fish "$BENCH_DIR/nuke/nuke.fish"
+        end
     end
 end
 

@@ -32,11 +32,17 @@ class StorageService
 
       @region = ENV.fetch('AWS_REGION', 'us-east-1')
       @endpoint = ENV['S3_ENDPOINT']
-      @public_endpoint = ENV['S3_PUBLIC_ENDPOINT']
+      # Upload endpoint: used by task runners (inside Docker) to upload results
+      # Should be reachable from inside Docker containers (e.g., host.docker.internal:9000)
+      @upload_endpoint = ENV['S3_UPLOAD_ENDPOINT'] || ENV['S3_PUBLIC_ENDPOINT']
+      # Download endpoint: used by master script (on host) to download results
+      # Should be reachable from the host machine (e.g., localhost:9000)
+      @download_endpoint = ENV['S3_DOWNLOAD_ENDPOINT'] || ENV['S3_PUBLIC_ENDPOINT']
       @bucket = ENV.fetch('S3_BUCKET_NAME', 'railsbencher-results')
 
       @s3_client = build_client
-      @public_s3_client = build_client(public_endpoint: true) if @public_endpoint.present?
+      @upload_s3_client = build_client(endpoint_override: @upload_endpoint) if @upload_endpoint.present?
+      @download_s3_client = build_client(endpoint_override: @download_endpoint) if @download_endpoint.present?
     end
 
     def generate_presigned_urls(run_id:, task_id:)
@@ -92,13 +98,13 @@ class StorageService
 
     private
 
-    def build_client(public_endpoint: false)
+    def build_client(endpoint_override: nil)
       options = {
         region: @region,
         credentials: @credentials
       }
 
-      endpoint = public_endpoint ? @public_endpoint : @endpoint
+      endpoint = endpoint_override || @endpoint
       if endpoint.present?
         options[:endpoint] = endpoint
         options[:force_path_style] = true
@@ -111,13 +117,19 @@ class StorageService
       @presigner ||= Aws::S3::Presigner.new(client: @s3_client)
     end
 
-    def public_presigner
-      @public_presigner ||= Aws::S3::Presigner.new(client: @public_s3_client || @s3_client)
+    # Presigner for upload URLs - used by task runners inside Docker containers
+    def upload_presigner
+      @upload_presigner ||= Aws::S3::Presigner.new(client: @upload_s3_client || @s3_client)
+    end
+
+    # Presigner for download URLs - used by master script on the host machine
+    def download_presigner
+      @download_presigner ||= Aws::S3::Presigner.new(client: @download_s3_client || @s3_client)
     end
 
     def presign_put(key)
-      # Use public presigner for uploads so external task runners can reach the endpoint
-      public_presigner.presigned_url(
+      # Use upload presigner for task runner uploads (needs to be reachable from inside Docker)
+      upload_presigner.presigned_url(
         :put_object,
         bucket: @bucket,
         key: key,
@@ -126,7 +138,8 @@ class StorageService
     end
 
     def presign_get(key)
-      public_presigner.presigned_url(
+      # Use download presigner for master script downloads (needs to be reachable from host)
+      download_presigner.presigned_url(
         :get_object,
         bucket: @bucket,
         key: key,
