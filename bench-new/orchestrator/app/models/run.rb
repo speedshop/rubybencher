@@ -37,9 +37,16 @@ class Run < ApplicationRecord
     end
   end
 
+  def maybe_finalize!
+    return unless running?
+    return if tasks.where(status: %w[pending claimed running]).exists?
+
+    GzipBuilderJob.perform_later(id)
+  end
+
   private
 
   def set_external_id
-    self.external_id ||= Time.current.to_i
+    self.external_id ||= "#{Time.current.to_i}#{SecureRandom.hex(4)}"
   end
 end

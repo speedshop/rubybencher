@@ -1,6 +1,7 @@
 require "test_helper"
 
 class RunTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
   test "creates run with external_id" do
     run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
 
@@ -55,5 +56,57 @@ class RunTest < ActiveSupport::TestCase
     current_run = Run.create!(ruby_version: "3.4.8", runs_per_instance_type: 3)
 
     assert_equal current_run, Run.current
+  end
+
+  test "maybe_finalize! enqueues gzip builder when all tasks are done" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    task1 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    task2 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
+
+    task1.claim!("runner-1")
+    task1.complete!("results/1/task_1.tar.gz")
+    task2.claim!("runner-2")
+    task2.fail!(error_type: "timeout", error_message: "Timed out")
+
+    assert_enqueued_with(job: GzipBuilderJob, args: [run.id]) do
+      run.maybe_finalize!
+    end
+  end
+
+  test "maybe_finalize! does nothing when pending tasks exist" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    task2 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
+    task2.claim!("runner-2")
+    task2.complete!("results/1/task_2.tar.gz")
+
+    assert_no_enqueued_jobs(only: GzipBuilderJob) do
+      run.maybe_finalize!
+    end
+  end
+
+  test "maybe_finalize! does nothing when claimed tasks exist" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    task1 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    task1.claim!("runner-1")
+    task2 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
+    task2.claim!("runner-2")
+    task2.complete!("results/1/task_2.tar.gz")
+
+    assert_no_enqueued_jobs(only: GzipBuilderJob) do
+      run.maybe_finalize!
+    end
+  end
+
+  test "maybe_finalize! does nothing when run is not running" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1)
+    task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    task.claim!("runner-1")
+    task.complete!("results/1/task_1.tar.gz")
+    run.complete!
+
+    assert_no_enqueued_jobs(only: GzipBuilderJob) do
+      run.maybe_finalize!
+    end
   end
 end

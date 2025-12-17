@@ -126,7 +126,7 @@ class TasksController < ApplicationController
 
     task.complete!(params[:s3_result_key])
 
-    check_run_completion(task.run)
+    task.run.maybe_finalize!
 
     render json: { message: 'Task marked as completed' }
   rescue ActiveRecord::RecordNotFound
@@ -152,7 +152,7 @@ class TasksController < ApplicationController
       s3_error_key: params[:s3_error_key]
     )
 
-    check_run_completion(task.run)
+    task.run.maybe_finalize!
 
     render json: { message: 'Task marked as failed' }
   rescue ActiveRecord::RecordNotFound
@@ -184,15 +184,5 @@ class TasksController < ApplicationController
       error_type: task.error_type,
       error_message: task.error_message
     }
-  end
-
-  def check_run_completion(run)
-    return unless run.running?
-
-    all_done = run.tasks.where(status: ['pending', 'claimed', 'running']).count.zero?
-
-    if all_done
-      GzipBuilderJob.perform_later(run.id)
-    end
   end
 end

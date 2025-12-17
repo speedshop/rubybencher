@@ -20,6 +20,11 @@ class GzipBuilderJob < ApplicationJob
     rescue => e
       Rails.logger.error("Failed to build gzip for run #{run.external_id}: #{e.message}")
       Rails.logger.error(e.backtrace.join("\n"))
+
+      # Mark run as completed even if gzip building fails
+      # The individual task results are still available in S3
+      run.update!(status: 'completed')
+      Rails.logger.info("Marked run #{run.external_id} as completed despite gzip build failure")
     end
   end
 end

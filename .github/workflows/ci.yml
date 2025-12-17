@@ -30,13 +30,15 @@ jobs:
           bundler-cache: true
           working-directory: bench-new/orchestrator
 
-      - name: Orchestrator Tests
+      - name: Orchestrator Unit Tests
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/orchestrator_test
+          QUEUE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/orchestrator_test
           RAILS_ENV: test
         run: |
           cd bench-new/orchestrator
           bin/rails db:create db:schema:load
+          bin/rails db:schema:load:queue || true
           bin/rails test
 
       - name: Task Runner Tests
@@ -50,42 +52,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Fish and jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fish jq
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Start Services
-        run: |
-          cd bench-new/orchestrator
-          docker compose up -d
-          sleep 15
+        run: ./test/orchestrator/setup.sh
 
-      - name: Wait for Orchestrator
-        run: |
-          for i in {1..30}; do
-            if curl -sf http://localhost:3000/up; then
-              echo "Orchestrator is ready"
-              exit 0
-            fi
-            echo "Waiting for orchestrator... ($i/30)"
-            sleep 2
-          done
-          echo "Orchestrator failed to start"
-          docker compose -f bench-new/orchestrator/docker-compose.yml logs
-          exit 1
+      - name: Run API Tests
+        run: ./test/orchestrator/api_tests.sh
 
-      - name: Test API Lifecycle
-        run: |
-          cd bench-new/orchestrator
-          ./test/integration/api_lifecycle_test.sh
+      - name: Show Logs on Failure
+        if: failure()
+        run: docker compose -f bench-new/orchestrator/docker-compose.yml logs
 
-  e2e-test:
+  e2e-jobs-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Fish Shell
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Start Services
+        run: ./test/orchestrator/setup.sh
+
+      - name: Run E2E Tests (Background Jobs)
+        run: ./test/orchestrator/e2e_tests.sh
+
+      - name: Show Logs on Failure
+        if: failure()
+        run: docker compose -f bench-new/orchestrator/docker-compose.yml logs
+
+  e2e-full-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Fish Shell and jq
         run: |
           sudo apt-get update
           sudo apt-get install -y fish jq
