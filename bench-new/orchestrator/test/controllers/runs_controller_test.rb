@@ -1,6 +1,8 @@
 require "test_helper"
 
 class RunsControllerTest < ActionDispatch::IntegrationTest
+  include ActiveJob::TestHelper
+
   setup do
     @api_key = ENV.fetch('API_KEY', 'dev_api_key_change_in_production')
   end
@@ -79,6 +81,27 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     run.reload
     assert_equal "cancelled", run.status
+  end
+
+  test "POST /runs/:id/stop cancels pending tasks and enqueues gzip builder" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
+    pending_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    claimed_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
+    claimed_task.claim!("runner-1")
+    completed_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 3)
+    completed_task.claim!("runner-2")
+    completed_task.complete!("results/1/task_3.tar.gz")
+
+    assert_enqueued_with(job: GzipBuilderJob, args: [run.id]) do
+      post stop_run_path(run.external_id),
+        headers: { 'Authorization' => "Bearer #{@api_key}" },
+        as: :json
+    end
+
+    assert_response :success
+    assert_equal "cancelled", pending_task.reload.status
+    assert_equal "cancelled", claimed_task.reload.status
+    assert_equal "completed", completed_task.reload.status
   end
 
   test "POST /runs/:id/stop requires authentication" do

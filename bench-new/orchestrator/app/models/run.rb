@@ -35,6 +35,7 @@ class Run < ApplicationRecord
       tasks.incomplete.update_all(status: 'cancelled')
       update!(status: 'cancelled')
     end
+    GzipBuilderJob.perform_later(id)
   end
 
   def maybe_finalize!

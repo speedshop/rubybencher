@@ -64,6 +64,21 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :unauthorized
   end
 
+  test "POST /runs/:run_id/tasks/claim returns done when run is cancelled" do
+    @run.cancel!
+
+    post "/runs/#{@run.external_id}/tasks/claim",
+      params: { provider: "aws", instance_type: "c8g.medium", runner_id: "i-12345" },
+      headers: { 'Authorization' => "Bearer #{@api_key}" },
+      as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+
+    assert_equal "done", json['status']
+    assert_equal "Run is not running", json['message']
+  end
+
   test "POST /tasks/:id/heartbeat updates task heartbeat" do
     @task.claim!("runner-123")
 

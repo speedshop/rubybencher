@@ -48,6 +48,62 @@ class RunTest < ActiveSupport::TestCase
     assert_equal "cancelled", run.status
   end
 
+  test "cancel! cancels all pending tasks" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
+    task1 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    task2 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
+    task3 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 3)
+
+    run.cancel!
+
+    assert_equal "cancelled", task1.reload.status
+    assert_equal "cancelled", task2.reload.status
+    assert_equal "cancelled", task3.reload.status
+  end
+
+  test "cancel! cancels claimed and running tasks" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
+    pending_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    claimed_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
+    claimed_task.claim!("runner-1")
+    running_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 3)
+    running_task.claim!("runner-2")
+    running_task.update!(status: "running")
+
+    run.cancel!
+
+    assert_equal "cancelled", pending_task.reload.status
+    assert_equal "cancelled", claimed_task.reload.status
+    assert_equal "cancelled", running_task.reload.status
+  end
+
+  test "cancel! does not change completed or failed tasks" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
+    completed_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    completed_task.claim!("runner-1")
+    completed_task.complete!("results/1/task_1.tar.gz")
+    failed_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
+    failed_task.claim!("runner-2")
+    failed_task.fail!(error_type: "timeout", error_message: "Timed out")
+    pending_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 3)
+
+    run.cancel!
+
+    assert_equal "completed", completed_task.reload.status
+    assert_equal "failed", failed_task.reload.status
+    assert_equal "cancelled", pending_task.reload.status
+  end
+
+  test "cancel! enqueues GzipBuilderJob" do
+    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
+    run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
+
+    assert_enqueued_with(job: GzipBuilderJob, args: [run.id]) do
+      run.cancel!
+    end
+  end
+
   test "current scope returns most recent running run" do
     old_run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
     old_run.complete!
