@@ -48,6 +48,6 @@ class Run < ApplicationRecord
   private
 
   def set_external_id
-    self.external_id ||= "#{Time.current.to_i}#{SecureRandom.hex(4)}"
+    self.external_id ||= "#{Time.current.to_i}#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
   end
 end

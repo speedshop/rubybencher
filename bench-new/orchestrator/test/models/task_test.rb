@@ -100,4 +100,36 @@ class TaskTest < ActiveSupport::TestCase
     assert_includes aws_results, aws_task
     assert_not_includes aws_results, azure_task
   end
+
+  test "instance_identifier returns alias when present" do
+    task = @run.tasks.create!(
+      provider: "aws",
+      instance_type: "c8g.medium",
+      instance_type_alias: "graviton4",
+      run_number: 1
+    )
+
+    assert_equal "graviton4", task.instance_identifier
+  end
+
+  test "instance_identifier returns instance_type when alias is nil" do
+    task = @run.tasks.create!(
+      provider: "aws",
+      instance_type: "c8g.medium",
+      run_number: 1
+    )
+
+    assert_equal "c8g.medium", task.instance_identifier
+  end
+
+  test "instance_identifier returns instance_type when alias is empty" do
+    task = @run.tasks.create!(
+      provider: "aws",
+      instance_type: "c8g.medium",
+      instance_type_alias: "",
+      run_number: 1
+    )
+
+    assert_equal "c8g.medium", task.instance_identifier
+  end
 end

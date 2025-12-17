@@ -66,22 +66,41 @@ class StorageService
       output_path = Rails.root.join('tmp', 'storage', "run_#{run.external_id}_results.tar.gz")
       FileUtils.mkdir_p(output_path.dirname)
 
-      temp_dir = Rails.root.join('tmp', "run_#{run.external_id}_download")
-      FileUtils.mkdir_p(temp_dir)
+      download_dir = Rails.root.join('tmp', "run_#{run.external_id}_download")
+      combined_dir = Rails.root.join('tmp', "run_#{run.external_id}_combined")
+      FileUtils.mkdir_p(download_dir)
+      FileUtils.mkdir_p(combined_dir)
 
       begin
         run.tasks.completed.each do |task|
           next unless task.s3_result_key
 
-          local_file = temp_dir.join("task_#{task.id}_result.tar.gz")
+          # Download the task's result.tar.gz
+          local_tarball = download_dir.join("task_#{task.id}_result.tar.gz")
           @s3_client.get_object(
             bucket: @bucket,
             key: task.s3_result_key,
-            response_target: local_file
+            response_target: local_tarball
           )
+
+          # Create the instance directory: <instance-identifier>-<task-id>/
+          instance_dir = combined_dir.join("#{task.instance_identifier}-#{task.id}")
+          FileUtils.mkdir_p(instance_dir)
+
+          # Extract output.txt and metadata.json from the tarball
+          extract_dir = download_dir.join("task_#{task.id}_extracted")
+          FileUtils.mkdir_p(extract_dir)
+          system("tar", "-xzf", local_tarball.to_s, "-C", extract_dir.to_s)
+
+          # Copy output.txt and metadata.json to the instance directory
+          %w[output.txt metadata.json].each do |filename|
+            source = extract_dir.join(filename)
+            FileUtils.cp(source, instance_dir.join(filename)) if File.exist?(source)
+          end
         end
 
-        system("tar", "-czf", output_path.to_s, "-C", temp_dir.to_s, ".")
+        # Create combined archive from the combined directory
+        system("tar", "-czf", output_path.to_s, "-C", combined_dir.to_s, ".")
 
         @s3_client.put_object(
           bucket: @bucket,
@@ -91,7 +110,8 @@ class StorageService
 
         result_url("results/#{run.external_id}/combined_results.tar.gz")
       ensure
-        FileUtils.rm_rf(temp_dir)
+        FileUtils.rm_rf(download_dir)
+        FileUtils.rm_rf(combined_dir)
         FileUtils.rm_f(output_path)
       end
     end

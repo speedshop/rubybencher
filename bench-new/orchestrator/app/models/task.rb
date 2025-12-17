@@ -77,4 +77,8 @@ class Task < ApplicationRecord
       error_message: "No heartbeat received for 2 minutes. Last heartbeat: #{heartbeat_at}"
     )
   end
+
+  def instance_identifier
+    instance_type_alias.presence || instance_type
+  end
 end
