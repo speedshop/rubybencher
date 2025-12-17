@@ -6,8 +6,6 @@ require 'erb'
 require 'set'
 
 RESULTS_BASE = File.expand_path('../results', __dir__)
-# Use the most recent results directory
-RESULTS_DIR = Dir.glob(File.join(RESULTS_BASE, '*')).select { |f| File.directory?(f) }.max_by { |f| File.mtime(f) }
 OUTPUT_DIR = File.expand_path('public', __dir__)
 OUTPUT_FILE = File.join(OUTPUT_DIR, 'index.html')
 TEMPLATE_FILE = File.expand_path('templates/report.html.erb', __dir__)
@@ -242,8 +240,24 @@ end
 # Main
 require 'fileutils'
 
-abort "No results directory found in #{RESULTS_BASE}" unless RESULTS_DIR
-puts "Using results from: #{RESULTS_DIR}"
+# Parse command line arguments for run_ids
+run_ids = ARGV.dup
+
+if run_ids.empty?
+  # Fall back to most recent results directory
+  most_recent = Dir.glob(File.join(RESULTS_BASE, '*')).select { |f| File.directory?(f) }.max_by { |f| File.mtime(f) }
+  abort "No results directory found in #{RESULTS_BASE}" unless most_recent
+  run_ids = [File.basename(most_recent)]
+end
+
+# Validate all run_ids exist
+results_dirs = run_ids.map do |run_id|
+  dir = File.join(RESULTS_BASE, run_id)
+  abort "Results directory not found: #{dir}" unless File.directory?(dir)
+  dir
+end
+
+puts "Using results from: #{run_ids.join(', ')}"
 puts "Parsing benchmark results..."
 
 FileUtils.mkdir_p(OUTPUT_DIR)
@@ -252,20 +266,31 @@ FileUtils.mkdir_p(OUTPUT_DIR)
 static_dir = File.expand_path('static', __dir__)
 FileUtils.cp_r(Dir.glob(File.join(static_dir, '*')), OUTPUT_DIR)
 
+# Collect all instance directories from all run_ids
+# Check for naming conflicts (same instance name in multiple run_ids)
+instance_dir_map = {}  # instance_name => full_path
+
+results_dirs.each do |results_dir|
+  run_id = File.basename(results_dir)
+  Dir.glob(File.join(results_dir, '*')).select { |f| File.directory?(f) }.each do |dir|
+    instance_name = File.basename(dir)
+    if instance_dir_map.key?(instance_name)
+      existing_run_id = File.basename(File.dirname(instance_dir_map[instance_name]))
+      abort "Conflict: instance '#{instance_name}' exists in both '#{existing_run_id}' and '#{run_id}'"
+    end
+    instance_dir_map[instance_name] = dir
+  end
+end
+
 # Results are expected at results/{run_id}/{instance-type}/output.txt
 # Instance names may have replica suffixes (e.g., c6g-medium-1, c6g-medium-2)
 # Combine replicas into a single instance type
 data = {}
 instance_metadata = {}
 
-instance_dirs = Dir.glob(File.join(RESULTS_DIR, '*')).select { |f| File.directory?(f) }
-
-instance_dirs.each do |dir|
-  raw_instance_name = File.basename(dir)
+instance_dir_map.each do |instance_name, dir|
   output_file = File.join(dir, 'output.txt')
   next unless File.exist?(output_file)
-
-  instance_name = raw_instance_name
 
   puts "  Parsing #{instance_name}..."
   run_data = parse_benchmark_file(output_file)
@@ -288,8 +313,9 @@ end
 data = remap_instances(data, instance_metadata)
 
 puts "\nGenerating HTML report..."
-run_id = File.basename(RESULTS_DIR)
-html, iteration_data = generate_html(data, run_id)
+# Use combined run_ids for display
+combined_run_id = run_ids.join(' + ')
+html, iteration_data = generate_html(data, combined_run_id)
 File.write(OUTPUT_FILE, html)
 
 # Write iteration data to separate JSON file
