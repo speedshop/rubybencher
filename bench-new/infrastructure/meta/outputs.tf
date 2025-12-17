@@ -34,7 +34,39 @@ output "public_subnet_id" {
   value       = aws_subnet.public.id
 }
 
+output "bastion_public_ip" {
+  description = "Public IP address of the bastion host"
+  value       = aws_instance.bastion.public_ip
+}
+
+output "bastion_security_group_id" {
+  description = "Security group ID of the bastion host (for task runner SG rules)"
+  value       = aws_security_group.bastion.id
+}
+
+output "bastion_ssh_command" {
+  description = "SSH command to connect directly to bastion"
+  value       = "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${aws_instance.bastion.public_ip}"
+}
+
 output "ssh_command" {
-  description = "SSH command to connect to orchestrator"
-  value       = "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${aws_instance.orchestrator.public_ip}"
+  description = "SSH command to connect to orchestrator via bastion (ProxyJump)"
+  value       = "ssh -i ~/.ssh/${var.key_name}.pem -J ec2-user@${aws_instance.bastion.public_ip} ec2-user@${aws_instance.orchestrator.private_ip}"
+}
+
+output "ssh_config_example" {
+  description = "Example SSH config for ProxyJump setup"
+  value       = <<-EOT
+    # Add to ~/.ssh/config:
+    Host railsbencher-bastion
+      HostName ${aws_instance.bastion.public_ip}
+      User ec2-user
+      IdentityFile ~/.ssh/${var.key_name}.pem
+
+    Host railsbencher-orchestrator
+      HostName ${aws_instance.orchestrator.private_ip}
+      User ec2-user
+      IdentityFile ~/.ssh/${var.key_name}.pem
+      ProxyJump railsbencher-bastion
+  EOT
 }

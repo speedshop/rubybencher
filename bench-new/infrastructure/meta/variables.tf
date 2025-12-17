@@ -58,3 +58,9 @@ variable "aws_secret_access_key" {
   sensitive   = true
   default     = ""
 }
+
+variable "allowed_ssh_cidr" {
+  description = "CIDR block allowed to SSH to the bastion host"
+  type        = string
+  default     = "0.0.0.0/0"
+}

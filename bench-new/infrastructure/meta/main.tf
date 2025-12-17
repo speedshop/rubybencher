@@ -100,6 +100,63 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# Security Group for Bastion Host
+resource "aws_security_group" "bastion" {
+  name        = "railsbencher-bastion-sg"
+  description = "Security group for bastion host"
+  vpc_id      = aws_vpc.main.id
+
+  # SSH access from allowed CIDR
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ssh_cidr]
+  }
+
+  # All outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "railsbencher-bastion-sg"
+  }
+}
+
+# EC2 Instance for Bastion Host
+resource "aws_instance" "bastion" {
+  ami                    = data.aws_ami.amazon_linux_2023.id
+  instance_type          = "t3.micro"
+  key_name               = var.key_name
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.bastion.id]
+
+  root_block_device {
+    volume_size = 8
+    volume_type = "gp3"
+  }
+
+  tags = {
+    Name = "railsbencher-bastion"
+  }
+
+  # Wait for instance to be ready for SSH
+  provisioner "remote-exec" {
+    inline = ["echo 'Bastion host ready'"]
+
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file(var.private_key_path)
+      host        = self.public_ip
+    }
+  }
+}
+
 # Security Group for Orchestrator
 resource "aws_security_group" "orchestrator" {
   name        = "railsbencher-orchestrator-sg"
@@ -114,12 +171,12 @@ resource "aws_security_group" "orchestrator" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # SSH access from anywhere (consider restricting in production)
+  # SSH access only from bastion host
   ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
   }
 
   # All outbound traffic
@@ -182,15 +239,21 @@ resource "aws_instance" "orchestrator" {
     Name = "railsbencher-orchestrator"
   }
 
+  # Ensure bastion is ready before provisioning orchestrator
+  depends_on = [aws_instance.bastion]
+
   # Wait for instance to be ready
   provisioner "remote-exec" {
     inline = ["echo 'Waiting for cloud-init to complete...' && cloud-init status --wait"]
 
     connection {
-      type        = "ssh"
-      user        = "ec2-user"
-      private_key = file(var.private_key_path)
-      host        = self.public_ip
+      type                = "ssh"
+      user                = "ec2-user"
+      private_key         = file(var.private_key_path)
+      host                = self.private_ip
+      bastion_host        = aws_instance.bastion.public_ip
+      bastion_user        = "ec2-user"
+      bastion_private_key = file(var.private_key_path)
     }
   }
 
@@ -204,10 +267,13 @@ resource "aws_instance" "orchestrator" {
     destination = "/tmp/orchestrator.tar.gz"
 
     connection {
-      type        = "ssh"
-      user        = "ec2-user"
-      private_key = file(var.private_key_path)
-      host        = self.public_ip
+      type                = "ssh"
+      user                = "ec2-user"
+      private_key         = file(var.private_key_path)
+      host                = self.private_ip
+      bastion_host        = aws_instance.bastion.public_ip
+      bastion_user        = "ec2-user"
+      bastion_private_key = file(var.private_key_path)
     }
   }
 
@@ -225,10 +291,13 @@ resource "aws_instance" "orchestrator" {
     ]
 
     connection {
-      type        = "ssh"
-      user        = "ec2-user"
-      private_key = file(var.private_key_path)
-      host        = self.public_ip
+      type                = "ssh"
+      user                = "ec2-user"
+      private_key         = file(var.private_key_path)
+      host                = self.private_ip
+      bastion_host        = aws_instance.bastion.public_ip
+      bastion_user        = "ec2-user"
+      bastion_private_key = file(var.private_key_path)
     }
   }
 }
