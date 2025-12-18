@@ -27,4 +27,4 @@ COPY . .
 
 # Prepare database and start server
 EXPOSE 3000
-CMD ["sh", "-c", "rm -f tmp/pids/server.pid && bin/rails db:prepare && bin/rails server -b 0.0.0.0"]
+CMD ["sh", "-c", "rm -f tmp/pids/server.pid && bin/rails db:prepare && (bin/rails db:create:queue 2>/dev/null || true) && bin/rails db:schema:load:queue && bin/rails server -b 0.0.0.0"]

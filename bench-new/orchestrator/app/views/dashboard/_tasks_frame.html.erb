@@ -76,7 +76,7 @@
                 <% if task.progress_pct %>
                   <div class="flex items-center">
                     <div class="w-full bg-gray-200 rounded-full h-2.5 mr-2">
-                      <div class="bg-blue-600 h-2.5 rounded-full" style="width: <%= task.progress_pct %>%"></div>
+                      <div class="bg-blue-600 h-2.5 rounded-full<%= ' progress-bar-animated' if task.status == 'running' %>" style="width: <%= task.progress_pct %>%"></div>
                     </div>
                     <span><%= task.progress_pct %>%</span>
                   </div>

@@ -29,15 +29,32 @@ export default class extends Controller {
   async refresh() {
     const frame = this.element.querySelector("turbo-frame")
     if (frame && this.urlValue) {
-      const response = await fetch(this.urlValue, {
-        headers: { "Accept": "text/html" }
-      })
-      const html = await response.text()
-      const doc = new DOMParser().parseFromString(html, "text/html")
-      const newFrame = doc.querySelector("turbo-frame")
-      if (newFrame) {
-        frame.innerHTML = newFrame.innerHTML
+      try {
+        const response = await fetch(this.urlValue, {
+          headers: { "Accept": "text/html" }
+        })
+        if (!response.ok) {
+          this.showError(frame)
+          return
+        }
+        const html = await response.text()
+        const doc = new DOMParser().parseFromString(html, "text/html")
+        const newFrame = doc.querySelector("turbo-frame")
+        if (newFrame) {
+          frame.innerHTML = newFrame.innerHTML
+        }
+      } catch (error) {
+        this.showError(frame)
       }
     }
+  }
+
+  showError(frame) {
+    frame.innerHTML = `
+      <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+        <p class="text-red-600 font-medium">Orchestrator unavailable</p>
+        <p class="text-red-500 text-sm mt-1">Retrying automatically...</p>
+      </div>
+    `
   }
 }
