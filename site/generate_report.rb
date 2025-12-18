@@ -3,7 +3,6 @@
 
 require 'json'
 require 'erb'
-require 'set'
 
 RESULTS_BASE = File.expand_path('../results', __dir__)
 OUTPUT_DIR = File.expand_path('public', __dir__)
@@ -33,55 +32,37 @@ def display_instance_name(base_name, metadata = {})
 end
 
 def parse_benchmark_file(file_path)
-  content = File.read(file_path)
+  json_data = JSON.parse(File.read(file_path))
   benchmarks = {}
 
-  # Find Ruby version and architecture
-  version_match = content.match(/ruby (\d+\.\d+\.\d+) .* \[(\w+-linux)\]/)
-  ruby_version = version_match ? version_match[1] : 'unknown'
-  architecture = version_match ? version_match[2] : 'unknown'
+  ruby_version = 'unknown'
+  architecture = 'unknown'
 
-  lines = content.lines
-  current_benchmark = nil
-  current_iterations = []
-  seen_benchmarks = Set.new
-
-  lines.each do |line|
-    # Match benchmark start
-    if match = line.match(/^Running benchmark "([^"]+)" \((\d+)\/\d+\)/)
-      benchmark_name = match[1]
-      benchmark_num = match[2].to_i
-
-      # Only process first run (stop if we see benchmark 1 again)
-      if benchmark_num == 1 && seen_benchmarks.include?(benchmark_name)
-        break
+  # raw_data has variant keys like "=yjit", each containing benchmark results
+  raw_data = json_data['raw_data'] || {}
+  raw_data.each_value do |variant_data|
+    variant_data.each do |bench_name, bench_data|
+      # Extract ruby version and architecture from RUBY_DESCRIPTION
+      if ruby_version == 'unknown' && bench_data['RUBY_DESCRIPTION']
+        version_match = bench_data['RUBY_DESCRIPTION'].match(/ruby (\d+\.\d+\.\d+).*\[(\w+-\w+)\]/)
+        if version_match
+          ruby_version = version_match[1]
+          architecture = version_match[2]
+        end
       end
 
-      seen_benchmarks.add(benchmark_name)
-      current_benchmark = benchmark_name
-      current_iterations = []
-    end
+      # bench array contains non-warmup iterations in seconds (floats)
+      bench_iterations = bench_data['bench'] || []
+      next if bench_iterations.empty?
 
-    # Match iteration line (e.g., " #1: 3355ms" or "#10:  267ms")
-    if match = line.match(/^\s*#(\d+):\s*(\d+)ms/)
-      current_iterations << match[2].to_i
-    end
+      # Convert seconds to milliseconds (integers) to match existing format
+      iterations_ms = bench_iterations.map { |t| (t * 1000).round }
+      average_ms = (iterations_ms.sum.to_f / iterations_ms.size).round
 
-    # Match average line to determine non-warmup count
-    if match = line.match(/^Average of last (\d+), non-warmup iters: (\d+)ms/)
-      non_warmup_count = match[1].to_i
-      average = match[2].to_i
-
-      if current_benchmark && current_iterations.any?
-        # Take the last N iterations as non-warmup
-        non_warmup_iters = current_iterations.last(non_warmup_count)
-        benchmarks[current_benchmark] = {
-          iterations: non_warmup_iters,
-          average: average
-        }
-      end
-      current_benchmark = nil
-      current_iterations = []
+      benchmarks[bench_name] = {
+        iterations: iterations_ms,
+        average: average_ms
+      }
     end
   end
 
@@ -130,9 +111,9 @@ def generate_html(data, run_id)
   all_benchmarks = data.values.flat_map { |d| d[:benchmarks].keys }.uniq.sort
   ruby_version = data.values.first[:ruby_version]
 
-  # Parse run_id (e.g., "20251128-143326") into formatted date
-  run_date = if run_id =~ /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/
-    Time.new($1.to_i, $2.to_i, $3.to_i, $4.to_i, $5.to_i, $6.to_i).strftime("%B %d, %Y at %H:%M UTC")
+  # Parse run_id (unix timestamp + 8 random digits) into formatted date
+  run_date = if run_id =~ /^(\d{10})\d{8}$/
+    Time.at($1.to_i).utc.strftime("%B %d, %Y at %H:%M UTC")
   else
     run_id
   end
@@ -282,14 +263,14 @@ results_dirs.each do |results_dir|
   end
 end
 
-# Results are expected at results/{run_id}/{instance-type}/output.txt
+# Results are expected at results/{run_id}/{instance-type}/output.json
 # Instance names may have replica suffixes (e.g., c6g-medium-1, c6g-medium-2)
 # Combine replicas into a single instance type
 data = {}
 instance_metadata = {}
 
 instance_dir_map.each do |instance_name, dir|
-  output_file = File.join(dir, 'output.txt')
+  output_file = File.join(dir, 'output.json')
   next unless File.exist?(output_file)
 
   puts "  Parsing #{instance_name}..."
