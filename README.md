@@ -57,12 +57,23 @@ Create a config file (see `bench-new/config/aws-full.json` for an example):
   "ruby_version": "3.4.7",
   "runs_per_instance_type": 3,
   "aws": [
-    "c8g.medium",
-    "c7g.medium",
-    "c6g.medium"
+    {
+      "instance_type": "c8g.medium",
+      "alias": "c8g"
+    },
+    {
+      "instance_type": "c7g.medium",
+      "alias": "c7g"
+    },
+    {
+      "instance_type": "c6g.medium",
+      "alias": "c6g"
+    }
   ]
 }
 ```
+
+Each instance is an object with `instance_type` (the cloud provider's instance type name) and `alias` (a short name used in results folders and reports).
 
 You'll then need to provide environment variables to get your AWS credentials working. See the Terraform for more information.
 
@@ -92,9 +103,14 @@ The config file controls what gets benchmarked:
 |-------|-------------|
 | `ruby_version` | Ruby version to test (e.g., "3.4.7") |
 | `runs_per_instance_type` | How many times to run benchmarks per instance |
-| `aws` | List of AWS instance types |
-| `azure` | List of Azure instance types |
-| `local` | Local Docker config for testing |
+| `aws` | Array of AWS instance objects |
+| `azure` | Array of Azure instance objects |
+| `local` | Array of local Docker instance objects |
+| `task_runners.count` | Number of parallel task runners per instance type (default: 1) |
+
+Each instance object has:
+- `instance_type`: The cloud provider's instance type name (or "docker" for local)
+- `alias`: A short name used in results folders and reports
 
 ### Example: Multiple Providers
 
@@ -103,12 +119,12 @@ The config file controls what gets benchmarked:
   "ruby_version": "3.4.7",
   "runs_per_instance_type": 3,
   "aws": [
-    "c8g.medium",
-    "c7g.medium"
+    { "instance_type": "c8g.medium", "alias": "c8g" },
+    { "instance_type": "c7g.medium", "alias": "c7g" }
   ],
   "azure": [
-    "Standard_D2pls_v6",
-    "Standard_D2als_v6"
+    { "instance_type": "Standard_D2pls_v6", "alias": "d2pls-v6" },
+    { "instance_type": "Standard_D2als_v6", "alias": "d2als-v6" }
   ]
 }
 ```
@@ -129,10 +145,12 @@ Reads result files and creates an HTML report with charts.
 
 ## Output
 
-Results land in `results/<run-id>/`. Each instance type gets its own folder with:
+Results land in `results/<run-id>/`. Each instance gets its own folder named `<alias>-<run-number>/` containing:
 
+- `output.json` - Structured benchmark results
+- `output.csv` - CSV format of results
 - `output.txt` - Raw benchmark output
-- `metadata.json` - Info about the run
+- `metadata.json` - Info about the run (provider, instance type, ruby version)
 
 The HTML report shows:
 
