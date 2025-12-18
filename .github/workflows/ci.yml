@@ -35,6 +35,7 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/orchestrator_test
           QUEUE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/orchestrator_test
           RAILS_ENV: test
+          PARALLEL_WORKERS: 1
         run: |
           cd bench-new/orchestrator
           bin/rails db:create db:schema:load
