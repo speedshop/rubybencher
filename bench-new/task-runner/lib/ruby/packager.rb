@@ -8,12 +8,15 @@ require "uri"
 module TaskRunner
   class Packager
     class << self
-      def package_result(work_dir:, task_id:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, runner_id:)
+      def package_result(work_dir:, task_id:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, runner_id:, log_file: nil)
         result_dir = File.join(work_dir, "result")
         FileUtils.mkdir_p(result_dir)
 
         # Copy all files from work_dir to result_dir (excluding subdirectories we create)
         copy_work_files(work_dir, result_dir)
+
+        # Include full run log if available (debug mode)
+        copy_log_file(log_file, result_dir) if log_file
 
         metadata = create_metadata(
           task_id: task_id,
@@ -33,12 +36,15 @@ module TaskRunner
         tarball
       end
 
-      def package_error(work_dir:, task_id:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, error_message:, runner_id:)
+      def package_error(work_dir:, task_id:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, error_message:, runner_id:, log_file: nil)
         error_dir = File.join(work_dir, "error")
         FileUtils.mkdir_p(error_dir)
 
         # Copy all files from work_dir to error_dir (excluding subdirectories we create)
         copy_work_files(work_dir, error_dir)
+
+        # Include full run log if available (debug mode)
+        copy_log_file(log_file, error_dir) if log_file
 
         File.write(File.join(error_dir, "error.txt"), error_message)
 
@@ -76,6 +82,11 @@ module TaskRunner
           next unless File.file?(path)
           FileUtils.cp(path, dest_dir)
         end
+      end
+
+      def copy_log_file(log_file, dest_dir)
+        return unless log_file && File.exist?(log_file)
+        FileUtils.cp(log_file, File.join(dest_dir, "full_run.log"))
       end
 
       def create_metadata(task_id:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, status:, runner_id:)

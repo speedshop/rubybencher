@@ -27,6 +27,7 @@ module TaskRunner
       logger.info "Benchmark Mode: #{options[:mock_mode] ? "mock" : "ruby-bench"}"
       logger.info "Debug Mode: #{options[:debug_mode]}"
       logger.info "No Exit Mode: #{options[:no_exit]}"
+      logger.info "Log File: #{options[:log_file] || "(none)"}"
       logger.info "Ruby: #{RUBY_VERSION}"
       logger.info "========================================"
 
@@ -40,7 +41,8 @@ module TaskRunner
         mock_mode: options[:mock_mode],
         debug_mode: options[:debug_mode],
         no_exit: options[:no_exit],
-        script_dir: options[:script_dir]
+        script_dir: options[:script_dir],
+        log_file: options[:log_file]
       )
 
       exit_code = worker.run
@@ -63,7 +65,8 @@ module TaskRunner
         mock_mode: false,
         debug_mode: false,
         no_exit: false,
-        script_dir: File.expand_path("../..", __dir__)
+        script_dir: File.expand_path("../..", __dir__),
+        log_file: nil
       }
 
       OptionParser.new do |opts|
@@ -103,6 +106,10 @@ module TaskRunner
 
         opts.on("--script-dir DIR", "Script directory (for finding mock benchmark)") do |v|
           options[:script_dir] = v
+        end
+
+        opts.on("--log-file PATH", "Path to full run log file (set by run.sh in debug mode)") do |v|
+          options[:log_file] = v
         end
 
         opts.on("-h", "--help", "Show this help message") do

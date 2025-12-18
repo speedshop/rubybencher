@@ -9,7 +9,7 @@ require_relative "logger"
 
 module TaskRunner
   class Worker
-    def initialize(orchestrator_url:, api_key:, run_id:, provider:, instance_type:, runner_id:, mock_mode: false, debug_mode: false, no_exit: false, script_dir: nil)
+    def initialize(orchestrator_url:, api_key:, run_id:, provider:, instance_type:, runner_id:, mock_mode: false, debug_mode: false, no_exit: false, script_dir: nil, log_file: nil)
       @orchestrator_url = orchestrator_url
       @api_key = api_key
       @run_id = run_id
@@ -20,6 +20,7 @@ module TaskRunner
       @debug_mode = debug_mode
       @no_exit = no_exit
       @script_dir = script_dir || File.expand_path("../..", __dir__)
+      @log_file = log_file
       @api = ApiClient.new(orchestrator_url, api_key)
       @logger = Logger.new(debug_mode: debug_mode)
     end
@@ -159,7 +160,8 @@ module TaskRunner
           run_number: run_number,
           start_time: start_time,
           end_time: end_time,
-          runner_id: @runner_id
+          runner_id: @runner_id,
+          log_file: @log_file
         )
 
         unless Packager.upload(result_tarball, result_url, logger: @logger)
@@ -208,7 +210,8 @@ module TaskRunner
         start_time: start_time,
         end_time: end_time,
         error_message: error_message,
-        runner_id: @runner_id
+        runner_id: @runner_id,
+        log_file: @log_file
       )
 
       Packager.upload(error_tarball, error_url, logger: @logger)
