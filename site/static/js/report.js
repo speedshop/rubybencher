@@ -178,6 +178,14 @@ filterInput.addEventListener('input', function() {
   });
 });
 
+// Check for benchmark URL parameter and apply filter
+const urlParams = new URLSearchParams(window.location.search);
+const benchmarkParam = urlParams.get('benchmark');
+if (benchmarkParam) {
+  filterInput.value = benchmarkParam;
+  filterInput.dispatchEvent(new Event('input'));
+}
+
 // Event delegation for table
 const resultsTable = document.getElementById('results-table');
 resultsTable.addEventListener('pointerover', e => {
