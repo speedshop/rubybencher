@@ -42,7 +42,7 @@ test:
     url: <%= ENV.fetch("DATABASE_URL", "postgres://orchestrator:orchestrator_dev@localhost:5432/orchestrator_test") %>
   queue:
     <<: *primary_test
-    url: <%= ENV["QUEUE_DATABASE_URL"] %>
+    url: <%= ENV.fetch("QUEUE_DATABASE_URL") { ENV.fetch("DATABASE_URL", "postgres://orchestrator:orchestrator_dev@localhost:5432/orchestrator_test") } %>
     migrations_paths: db/queue_migrate
 
 # As with config/credentials.yml, you never want to store sensitive information,
