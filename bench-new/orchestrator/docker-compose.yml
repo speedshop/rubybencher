@@ -52,7 +52,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      RAILS_ENV: development
+      RAILS_ENV: ${RAILS_ENV:-development}
       DATABASE_URL: postgres://orchestrator:orchestrator_dev@postgres:5432/orchestrator_development
       QUEUE_DATABASE_URL: postgres://orchestrator:orchestrator_dev@postgres:5432/orchestrator_development
       AWS_ACCESS_KEY_ID: minioadmin
@@ -87,7 +87,7 @@ services:
       dockerfile: Dockerfile.dev
     command: bin/jobs
     environment:
-      RAILS_ENV: development
+      RAILS_ENV: ${RAILS_ENV:-development}
       DATABASE_URL: postgres://orchestrator:orchestrator_dev@postgres:5432/orchestrator_development
       QUEUE_DATABASE_URL: postgres://orchestrator:orchestrator_dev@postgres:5432/orchestrator_development
       AWS_ACCESS_KEY_ID: minioadmin

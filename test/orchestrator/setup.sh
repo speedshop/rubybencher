@@ -9,6 +9,9 @@ source "$REPO_ROOT/test/helpers.sh"
 
 cd "$ORCHESTRATOR_DIR"
 
+# Use test environment for CI
+export RAILS_ENV=test
+
 log_info "Starting Docker services..."
 docker compose up -d
 
