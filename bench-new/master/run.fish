@@ -423,6 +423,7 @@ function start_local_task_runners
             docker run -d \
                 --name "$container_name" \
                 --add-host=host.docker.internal:host-gateway \
+                --cpus=1 \
                 task-runner:$ruby_version \
                 --orchestrator-url "$container_orchestrator_url" \
                 --api-key "$API_KEY" \

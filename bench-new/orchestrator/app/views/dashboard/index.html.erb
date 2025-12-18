@@ -1,67 +1,25 @@
-<div class="container mx-auto px-4 py-8">
+<div class="container mx-auto px-4 py-8" data-controller="auto-refresh" data-auto-refresh-interval-value="5000">
   <h1 class="text-4xl font-bold mb-8">Rails Bencher Orchestrator</h1>
 
-  <% if @run %>
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-2xl font-semibold">Current Run</h2>
-        <% if @run.running? %>
-          <%= form_with url: stop_run_path(@run), method: :post, class: "inline" do %>
-            <%= submit_tag "End Run Early", class: "bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded", data: { confirm: "Are you sure you want to end this run early?" } %>
-          <% end %>
-        <% end %>
-      </div>
-
-      <div class="grid grid-cols-2 gap-4 mb-4">
-        <div>
-          <p class="text-gray-600">Run ID</p>
-          <p class="text-xl font-semibold"><%= @run.external_id %></p>
-        </div>
-        <div>
-          <p class="text-gray-600">Status</p>
-          <p class="text-xl font-semibold">
-            <span class="<%= status_badge_class(@run.status) %>">
-              <%= @run.status.titleize %>
-            </span>
-          </p>
-        </div>
-        <div>
-          <p class="text-gray-600">Ruby Version</p>
-          <p class="text-xl font-semibold"><%= @run.ruby_version %></p>
-        </div>
-        <div>
-          <p class="text-gray-600">Runs Per Instance Type</p>
-          <p class="text-xl font-semibold"><%= @run.runs_per_instance_type %></p>
-        </div>
-      </div>
-
-      <% if @run.gzip_url %>
-        <div class="mt-4">
-          <a href="<%= @run.gzip_url %>" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded inline-block">
-            Download Results
-          </a>
-        </div>
-      <% end %>
-    </div>
-
-    <div data-controller="auto-refresh" data-auto-refresh-interval-value="5000" data-auto-refresh-url-value="<%= tasks_frame_path %>">
-      <%= render "tasks_frame" %>
-    </div>
-  <% else %>
-    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
-      <div class="flex">
-        <div class="flex-shrink-0">
-          <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-          </svg>
-        </div>
-        <div class="ml-3">
-          <p class="text-sm text-yellow-700">
-            No run currently in progress. Start a new run via the API.
-          </p>
-        </div>
+  <%= turbo_frame_tag "current_run_frame", src: current_run_frame_path, data: { auto_refresh_target: "frame" } do %>
+    <div class="bg-gray-100 rounded-lg p-6 mb-6 animate-pulse">
+      <div class="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="h-16 bg-gray-200 rounded"></div>
+        <div class="h-16 bg-gray-200 rounded"></div>
       </div>
     </div>
   <% end %>
-</div>
 
+  <%= turbo_frame_tag "tasks_frame", src: tasks_frame_path, data: { auto_refresh_target: "frame" } do %>
+    <div class="bg-gray-100 rounded-lg p-6 mb-6 animate-pulse">
+      <div class="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
+      <div class="grid grid-cols-6 gap-4 mb-4">
+        <% 6.times do %>
+          <div class="h-16 bg-gray-200 rounded"></div>
+        <% end %>
+      </div>
+      <div class="h-64 bg-gray-200 rounded"></div>
+    </div>
+  <% end %>
+</div>

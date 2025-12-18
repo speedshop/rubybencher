@@ -77,11 +77,17 @@ module TaskRunner
 
         report_progress("ruby_bench", 90, "Collecting results")
 
-        # Copy any result files that weren't written to work_dir
-        Dir.glob("*.{csv,json,txt}").each do |file|
-          dest = File.join(@work_dir, file)
-          FileUtils.cp(file, dest) unless File.exist?(dest)
-          @logger.debug "Copied #{file} to #{@work_dir}"
+        # Find the ruby-bench output files and copy with standardized names
+        # ruby-bench creates output_NNN.{txt,json,csv} files
+        output_files = Dir.glob(File.join(@work_dir, "output_*.txt"))
+        if output_files.any?
+          base = output_files.first.sub(/\.txt$/, "")
+          FileUtils.cp("#{base}.txt", File.join(@work_dir, "output.txt")) if File.exist?("#{base}.txt")
+          FileUtils.cp("#{base}.json", File.join(@work_dir, "output.json")) if File.exist?("#{base}.json")
+          FileUtils.cp("#{base}.csv", File.join(@work_dir, "output.csv")) if File.exist?("#{base}.csv")
+          @logger.info "Copied ruby-bench output files to standardized names"
+        else
+          @logger.warn "No ruby-bench output files found in #{@work_dir}"
         end
       end
 

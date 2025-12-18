@@ -92,8 +92,8 @@ class StorageService
           FileUtils.mkdir_p(extract_dir)
           system("tar", "-xzf", local_tarball.to_s, "-C", extract_dir.to_s)
 
-          # Copy output.txt and metadata.json to the instance directory
-          %w[output.txt metadata.json].each do |filename|
+          # Copy result files to the instance directory
+          %w[output.txt output.json output.csv metadata.json].each do |filename|
             source = extract_dir.join(filename)
             FileUtils.cp(source, instance_dir.join(filename)) if File.exist?(source)
           end

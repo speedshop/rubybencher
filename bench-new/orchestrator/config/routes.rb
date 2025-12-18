@@ -4,6 +4,7 @@ Rails.application.routes.draw do
 
   # HTML Dashboard (no auth required)
   root "dashboard#index"
+  get "current_run_frame", to: "dashboard#current_run_frame"
   get "tasks_frame", to: "dashboard#tasks_frame"
 
   # API Endpoints (require Bearer token auth)
