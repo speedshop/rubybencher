@@ -104,10 +104,14 @@ done
 assert_equals "completed" "$status" "Run with mixed outcomes completed"
 test_pass
 
-# Test 4: Verify recurring job is registered
+# Test 4: Verify recurring job is registered (with retry for timing)
 test_step "HeartbeatMonitorJob is registered as recurring"
 
-tasks=$(rails_runner "puts SolidQueue::RecurringTask.pluck(:key).join(',')" | tr -d '\n')
+for i in $(seq 1 10); do
+    tasks=$(rails_runner "puts SolidQueue::RecurringTask.pluck(:key).join(',')" | tr -d '\n')
+    [[ "$tasks" == *"heartbeat_monitor"* ]] && break
+    sleep 1
+done
 assert_contains "$tasks" "heartbeat_monitor" "Recurring task registered"
 test_pass
 

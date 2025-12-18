@@ -7,8 +7,12 @@ PROGRESS_FILE="${2:-/tmp/progress.json}"
 # Simulate benchmark with random duration between 5-10 seconds (quick for testing)
 DURATION=$((5 + RANDOM % 6))
 
-# 10% chance of failure
-FAIL_CHANCE=$((RANDOM % 10))
+# 10% chance of failure (can be disabled with MOCK_ALWAYS_SUCCEED=1)
+if [ "${MOCK_ALWAYS_SUCCEED:-0}" = "1" ]; then
+    FAIL_CHANCE=1  # Never 0, so never fails
+else
+    FAIL_CHANCE=$((RANDOM % 10))
+fi
 
 echo "Mock Benchmark Starting" | tee "$OUTPUT_FILE"
 echo "Ruby Version: $(ruby --version)" | tee -a "$OUTPUT_FILE"

@@ -79,6 +79,9 @@ class WorkerTest < Minitest::Test
   end
 
   def test_worker_processes_assigned_task
+    # Disable random failures in mock benchmark for deterministic test
+    ENV["MOCK_ALWAYS_SUCCEED"] = "1"
+
     claim_response = {
       status: "assigned",
       task: {
@@ -113,6 +116,9 @@ class WorkerTest < Minitest::Test
     stub_request(:post, "http://orchestrator:3000/tasks/42/complete")
       .to_return(status: 200, body: "")
 
+    stub_request(:post, "http://orchestrator:3000/tasks/42/fail")
+      .to_return(status: 200, body: "")
+
     FileUtils.mkdir_p("/tmp/test-results")
 
     worker = TaskRunner::Worker.new(
@@ -132,6 +138,7 @@ class WorkerTest < Minitest::Test
     assert_requested(:post, "http://orchestrator:3000/tasks/42/complete")
   ensure
     FileUtils.rm_rf("/tmp/test-results")
+    ENV.delete("MOCK_ALWAYS_SUCCEED")
   end
 
   def test_worker_retries_on_wait_status
