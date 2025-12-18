@@ -9,6 +9,11 @@
 #     priority: 2
 #     schedule: at 5am every day
 
+test:
+  heartbeat_monitor:
+    class: HeartbeatMonitorJob
+    schedule: every minute
+
 production:
   heartbeat_monitor:
     class: HeartbeatMonitorJob

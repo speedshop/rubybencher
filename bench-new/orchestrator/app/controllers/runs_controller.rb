@@ -5,11 +5,7 @@ class RunsController < ApplicationController
   skip_before_action :authenticate_api_request!, only: [:index, :show]
 
   def index
-    runs = Run.order(created_at: :desc).limit(100)
-
-    render json: {
-      runs: runs.map { |run| run_summary_json(run) }
-    }
+    @runs = Run.order(created_at: :desc).limit(100)
   end
 
   def create
@@ -20,50 +16,44 @@ class RunsController < ApplicationController
       return
     end
 
-    run = Run.new(
+    @run = Run.new(
       ruby_version: params[:ruby_version],
       runs_per_instance_type: params[:runs_per_instance_type]
     )
 
-    if run.save
-      tasks = create_tasks(run, instance_types)
-
-      render json: {
-        run_id: run.external_id,
-        tasks_created: tasks.count,
-        tasks: tasks.map { |t| task_json(t) }
-      }, status: :created
+    if @run.save
+      @tasks = create_tasks(@run, instance_types)
+      render :create, status: :created
     else
-      render json: { error: run.errors.full_messages }, status: :bad_request
+      render json: { error: @run.errors.full_messages }, status: :bad_request
     end
   end
 
   def show
-    run = find_run
+    @run = find_run
 
-    unless run
+    unless @run
       render json: { error: 'Run not found' }, status: :not_found
       return
     end
 
-    render json: run_status_json(run)
+    @tasks_by_status = @run.tasks.group(:status).count
   end
 
   def stop
-    run = find_run
+    @run = find_run
 
-    if run.nil?
+    if @run.nil?
       render json: { error: 'Run not found' }, status: :not_found
       return
     end
 
-    unless run.running?
+    unless @run.running?
       render json: { error: 'Run is not running' }, status: :unprocessable_entity
       return
     end
 
-    run.cancel!
-    render json: { message: 'Run cancelled successfully' }
+    @run.cancel!
   end
 
   private
@@ -112,45 +102,5 @@ class RunsController < ApplicationController
     end
 
     tasks
-  end
-
-  def task_json(task)
-    {
-      id: task.id,
-      provider: task.provider,
-      instance_type: task.instance_type,
-      instance_type_alias: task.instance_type_alias,
-      run_number: task.run_number,
-      status: task.status
-    }
-  end
-
-  def run_summary_json(run)
-    {
-      run_id: run.external_id,
-      status: run.status,
-      ruby_version: run.ruby_version,
-      created_at: run.created_at.iso8601
-    }
-  end
-
-  def run_status_json(run)
-    tasks_by_status = run.tasks.group(:status).count
-
-    {
-      run_id: run.external_id,
-      status: run.status,
-      ruby_version: run.ruby_version,
-      runs_per_instance_type: run.runs_per_instance_type,
-      tasks: {
-        total: run.tasks.count,
-        pending: tasks_by_status['pending'] || 0,
-        claimed: tasks_by_status['claimed'] || 0,
-        running: tasks_by_status['running'] || 0,
-        completed: tasks_by_status['completed'] || 0,
-        failed: tasks_by_status['failed'] || 0
-      },
-      gzip_url: run.gzip_url
-    }
   end
 end
