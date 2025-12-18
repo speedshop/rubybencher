@@ -30,7 +30,10 @@ docker compose exec -T web rails db:schema:load:queue 2>/dev/null || true
 log_info "Waiting for web service..."
 wait_for "Web" 30 2 curl -sf http://localhost:3000/up
 
-log_info "Waiting for worker to start..."
-sleep 5
+log_info "Waiting for worker to register..."
+wait_for "Worker process" 30 2 docker compose exec -T web rails runner "exit(SolidQueue::Process.where('last_heartbeat_at > ?', 30.seconds.ago).exists? ? 0 : 1)"
+
+log_info "Waiting for recurring tasks to sync..."
+wait_for "Recurring tasks" 30 2 docker compose exec -T web rails runner "exit(SolidQueue::RecurringTask.where(key: 'heartbeat_monitor').exists? ? 0 : 1)"
 
 log_success "All services ready"
