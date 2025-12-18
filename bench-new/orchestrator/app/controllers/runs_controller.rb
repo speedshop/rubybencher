@@ -3,6 +3,7 @@ class RunsController < ApplicationController
 
   skip_before_action :verify_authenticity_token
   skip_before_action :authenticate_api_request!, only: [:index, :show]
+  before_action :set_default_format
 
   def index
     @runs = Run.order(created_at: :desc).limit(100)
@@ -57,6 +58,10 @@ class RunsController < ApplicationController
   end
 
   private
+
+  def set_default_format
+    request.format = :json unless params[:format]
+  end
 
   def find_run
     Run.find_by(external_id: params[:id]) || Run.find_by(id: params[:id])
