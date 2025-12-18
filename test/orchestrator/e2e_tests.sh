@@ -104,30 +104,18 @@ done
 assert_equals "completed" "$status" "Run with mixed outcomes completed"
 test_pass
 
-# Tests 4 and 5 are skipped by default because the Solid Queue dispatcher may not sync
-# recurring tasks immediately in this environment. Set SKIP_INFRA_TESTS=false to run them.
-SKIP_INFRA_TESTS="${SKIP_INFRA_TESTS:-true}"
+# Test 4: Verify recurring job is registered
+test_step "HeartbeatMonitorJob is registered as recurring"
 
-if [ "$SKIP_INFRA_TESTS" = "true" ]; then
-    echo -e "\n${YELLOW}[SKIP]${NC} Tests 4-5 (infrastructure checks) - set SKIP_INFRA_TESTS=false to enable"
-else
-    # Test 4: Verify recurring job is registered (with retry for timing)
-    test_step "HeartbeatMonitorJob is registered as recurring"
+tasks=$(rails_runner "puts SolidQueue::RecurringTask.pluck(:key).join(',')" | tr -d '\n')
+assert_contains "$tasks" "heartbeat_monitor" "Recurring task registered"
+test_pass
 
-    for i in $(seq 1 10); do
-        tasks=$(rails_runner "puts SolidQueue::RecurringTask.pluck(:key).join(',')" | tr -d '\n')
-        [[ "$tasks" == *"heartbeat_monitor"* ]] && break
-        sleep 1
-    done
-    assert_contains "$tasks" "heartbeat_monitor" "Recurring task registered"
-    test_pass
+# Test 5: Worker is running
+test_step "Solid Queue worker is active"
 
-    # Test 5: Worker is running
-    test_step "Solid Queue worker is active"
-
-    count=$(rails_runner "puts SolidQueue::Process.where('last_heartbeat_at > ?', 1.minute.ago).count" | tr -d '\n')
-    [ "$count" -gt "0" ] && echo -e "  ${GREEN}✓${NC} $count active process(es)" || test_fail "No active workers"
-    test_pass
-fi
+count=$(rails_runner "puts SolidQueue::Process.where('last_heartbeat_at > ?', 1.minute.ago).count" | tr -d '\n')
+[ "$count" -gt "0" ] && echo -e "  ${GREEN}✓${NC} $count active process(es)" || test_fail "No active workers"
+test_pass
 
 print_summary
