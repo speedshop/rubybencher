@@ -142,17 +142,17 @@ jobs:
         run: |
           mkdir -p results/ci-test/local-docker-1
           mkdir -p site/static/css site/static/js
-          cat > results/ci-test/local-docker-1/output.txt << 'EOF'
-          Running benchmark "app_aobench" (1/1)
-          + taskset -c 0 /usr/local/bin/ruby -I harness /ruby-bench/benchmarks/app_aobench.rb
-          ruby 3.4.1 (2024-12-25 revision abcd1234) +YJIT +PRISM [x86_64-linux]
-          itr:   time
-           #1: 1500ms
-           #2: 1200ms
-           #3: 1100ms
-           #4: 1000ms
-           #5: 1050ms
-          Average of last 3, non-warmup iters: 1050ms
+          cat > results/ci-test/local-docker-1/output.json << 'EOF'
+          {
+            "raw_data": {
+              "=yjit": {
+                "app_aobench": {
+                  "RUBY_DESCRIPTION": "ruby 3.4.1 (2024-12-25 revision abcd1234) +YJIT +PRISM [x86_64-linux]",
+                  "bench": [1.5, 1.2, 1.1, 1.0, 1.05]
+                }
+              }
+            }
+          }
           EOF
           cat > results/ci-test/local-docker-1/metadata.json << 'EOF'
           {"provider":"local","instance_type":"docker","ruby_version":"3.4.1"}

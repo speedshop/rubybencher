@@ -9,8 +9,8 @@ source "$REPO_ROOT/test/helpers.sh"
 
 cd "$ORCHESTRATOR_DIR"
 
-# Use test environment for CI
-export RAILS_ENV=test
+# Use development environment (docker-compose creates orchestrator_development DB)
+export RAILS_ENV=development
 
 log_info "Starting Docker services..."
 docker compose up -d
