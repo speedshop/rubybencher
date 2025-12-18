@@ -20,7 +20,8 @@
   <div class="left-column">
     <h1>The Great Cross-Cloud Ruby Benchmark</h1>
     <p class="subtitle">Comparing iteration times across <%= instance_names.size %> machine types on several public clouds. Each dot is one non-warmup iteration.</p>
-    <p>This site was borne of my continuous frustration at <a href="https://speedshop.co">Speedshop</a> of clients running on old generation AWS instances, when I knew "free speed" was on the table. This page simply runs <a href="https://github.com/ruby/ruby-bench">ruby-bench</a>, a series of <i>mostly</i> CPU-bound benchmarks maintained by Ruby core and the YJIT developers. We run across multiple instances to reduce the effect of noisy neighbors.</p>
+    <p>This site was borne of my continuous frustration at <a href="https://speedshop.co">Speedshop</a> of clients running on old generation AWS instances, when I knew "free speed" was on the table if they just upgraded to a newer generation. However, I could never quantify the speed boost. This page simply runs <a href="https://github.com/ruby/ruby-bench">ruby-bench</a>, a series of <i>mostly</i> CPU-bound benchmarks maintained by Ruby core and the YJIT developers. We run across multiple instances to reduce the effect of noisy neighbors.</p>
+    <p>For Rails apps, the most relevant benchmark is likely <pre>shipit<pre>. Keep in mind that this benchmark likely still overstates the performance difference because it runs the database in-memory, which makes the benchmark more CPU-bound than a real-world app with a real database.</p>
     <p>All benchmarks were run on <%= run_date %> with YJIT enabled on Ruby <%= ruby_version %>. View the code for this page <a href="https://github.com/speedshop/rubybencher">here.</a></p>
   </div>
 
