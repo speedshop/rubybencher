@@ -59,6 +59,10 @@ module TaskRunner
 
       # Run benchmarks with output going to work_dir
       Dir.chdir(RUBY_BENCH_DIR) do
+        # Force single-process mode for Puma-based benchmarks (lobsters, etc.)
+        # to ensure consistent single-core measurements
+        ENV["WEB_CONCURRENCY"] = "1"
+
         # Run headline benchmarks, output files go to current directory
         # Use --no-pinning to avoid taskset issues in containers
         # Run only YJIT (skip interpreter baseline) with headline benchmarks

@@ -2,9 +2,7 @@
   "ruby_version": "3.4.7",
   "runs_per_instance_type": 3,
   "task_runners": {
-    "count": {
-      "local": 1
-    }
+    "count": 3
   },
   "local": [
     {
