@@ -37,12 +37,13 @@ development:
 # re-generated from your development database when you run "rake".
 # Do not set this db to the same as development or production.
 test:
-  <<: *default
-  database: orchestrator_test
-  username: orchestrator
-  password: orchestrator_dev
-  host: localhost
-  port: 5432
+  primary: &primary_test
+    <<: *default
+    url: <%= ENV.fetch("DATABASE_URL", "postgres://orchestrator:orchestrator_dev@localhost:5432/orchestrator_test") %>
+  queue:
+    <<: *primary_test
+    url: <%= ENV["QUEUE_DATABASE_URL"] %>
+    migrations_paths: db/queue_migrate
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is

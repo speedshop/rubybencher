@@ -46,9 +46,7 @@ services:
       "
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    build: .
     ports:
       - "3000:3000"
     environment:
@@ -82,9 +80,7 @@ services:
       start_period: 30s
 
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    build: .
     command: bin/jobs
     environment:
       RAILS_ENV: ${RAILS_ENV:-development}
