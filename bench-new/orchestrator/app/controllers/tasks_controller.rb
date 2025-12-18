@@ -3,21 +3,17 @@ class TasksController < ApplicationController
 
   skip_before_action :verify_authenticity_token
   skip_before_action :authenticate_api_request!, only: [:index]
+  before_action :set_default_format
 
   def index
-    run = find_run
+    @run = find_run
 
-    unless run
+    unless @run
       render json: { error: 'Run not found' }, status: :not_found
       return
     end
 
-    tasks = run.tasks.order(:id)
-
-    render json: {
-      run_id: run.external_id,
-      tasks: tasks.map { |t| task_detail_json(t) }
-    }
+    @tasks = @run.tasks.order(:id)
   end
 
   def claim
@@ -26,68 +22,55 @@ class TasksController < ApplicationController
       return
     end
 
-    run = find_run
+    @run = find_run
 
-    unless run
+    unless @run
       render json: { error: 'Run not found' }, status: :not_found
       return
     end
 
-    unless run.running?
-      render json: { status: 'done', message: 'Run is not running' }
+    unless @run.running?
+      @status = "done"
+      @message = "Run is not running"
       return
     end
 
-    task = nil
-
     ActiveRecord::Base.transaction do
-      task = run.tasks
+      @task = @run.tasks
         .for_provider_and_type(params[:provider], params[:instance_type])
         .pending
         .lock
         .first
 
-      if task.nil?
-        in_progress = run.tasks
+      if @task.nil?
+        in_progress = @run.tasks
           .for_provider_and_type(params[:provider], params[:instance_type])
           .where(status: ['claimed', 'running'])
           .exists?
 
         if in_progress
-          render json: { status: 'wait', retry_after_seconds: 30 }
-          return
+          @status = "wait"
         else
-          render json: { status: 'done' }
-          return
+          @status = "done"
         end
+        return
       end
 
-      task.claim!(params[:runner_id])
+      @task.claim!(params[:runner_id])
     end
 
-    presigned_urls = StorageService.generate_presigned_urls(
-      run_id: run.external_id,
-      task_id: task.id
+    @presigned_urls = StorageService.generate_presigned_urls(
+      run_id: @run.external_id,
+      task_id: @task.id
     )
 
-    render json: {
-      status: 'assigned',
-      task: {
-        id: task.id,
-        provider: task.provider,
-        instance_type: task.instance_type,
-        instance_type_alias: task.instance_type_alias,
-        run_number: task.run_number,
-        ruby_version: run.ruby_version
-      },
-      presigned_urls: presigned_urls
-    }
+    @status = "assigned"
   end
 
   def heartbeat
-    task = Task.find(params[:id])
+    @task = Task.find(params[:id])
 
-    unless params[:runner_id] == task.runner_id
+    unless params[:runner_id] == @task.runner_id
       render json: { error: 'Invalid runner_id' }, status: :forbidden
       return
     end
@@ -97,14 +80,12 @@ class TasksController < ApplicationController
       return
     end
 
-    task.update_heartbeat!(
+    @task.update_heartbeat!(
       heartbeat_status: params[:status],
       current_benchmark: params[:current_benchmark],
       progress_pct: params[:progress_pct],
       message: params[:message]
     )
-
-    render json: { message: 'Heartbeat received' }
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Task not found' }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -112,9 +93,9 @@ class TasksController < ApplicationController
   end
 
   def complete
-    task = Task.find(params[:id])
+    @task = Task.find(params[:id])
 
-    unless params[:runner_id] == task.runner_id
+    unless params[:runner_id] == @task.runner_id
       render json: { error: 'Invalid runner_id' }, status: :forbidden
       return
     end
@@ -124,19 +105,16 @@ class TasksController < ApplicationController
       return
     end
 
-    task.complete!(params[:s3_result_key])
-
-    task.run.maybe_finalize!
-
-    render json: { message: 'Task marked as completed' }
+    @task.complete!(params[:s3_result_key])
+    @task.run.maybe_finalize!
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Task not found' }, status: :not_found
   end
 
   def fail
-    task = Task.find(params[:id])
+    @task = Task.find(params[:id])
 
-    unless params[:runner_id] == task.runner_id
+    unless params[:runner_id] == @task.runner_id
       render json: { error: 'Invalid runner_id' }, status: :forbidden
       return
     end
@@ -146,43 +124,25 @@ class TasksController < ApplicationController
       return
     end
 
-    task.fail!(
+    @task.fail!(
       error_type: params[:error_type],
       error_message: params[:error_message],
       s3_error_key: params[:s3_error_key]
     )
 
-    task.run.maybe_finalize!
-
-    render json: { message: 'Task marked as failed' }
+    @task.run.maybe_finalize!
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Task not found' }, status: :not_found
   end
 
   private
 
+  def set_default_format
+    request.format = :json unless params[:format]
+  end
+
   def find_run
     run_id = params[:run_id] || params[:id]
     Run.find_by(external_id: run_id) || Run.find_by(id: run_id)
-  end
-
-  def task_detail_json(task)
-    {
-      id: task.id,
-      provider: task.provider,
-      instance_type: task.instance_type,
-      instance_type_alias: task.instance_type_alias,
-      run_number: task.run_number,
-      status: task.status,
-      runner_id: task.runner_id,
-      claimed_at: task.claimed_at&.iso8601,
-      heartbeat_at: task.heartbeat_at&.iso8601,
-      heartbeat_status: task.heartbeat_status,
-      heartbeat_message: task.heartbeat_message,
-      current_benchmark: task.current_benchmark,
-      progress_pct: task.progress_pct,
-      error_type: task.error_type,
-      error_message: task.error_message
-    }
   end
 end

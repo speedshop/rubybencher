@@ -1,0 +1,15 @@
+json.id task.id
+json.provider task.provider
+json.instance_type task.instance_type
+json.instance_type_alias task.instance_type_alias
+json.run_number task.run_number
+json.status task.status
+json.runner_id task.runner_id
+json.claimed_at task.claimed_at&.iso8601
+json.heartbeat_at task.heartbeat_at&.iso8601
+json.heartbeat_status task.heartbeat_status
+json.heartbeat_message task.heartbeat_message
+json.current_benchmark task.current_benchmark
+json.progress_pct task.progress_pct
+json.error_type task.error_type
+json.error_message task.error_message
