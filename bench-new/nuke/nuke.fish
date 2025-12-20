@@ -92,8 +92,9 @@ function confirm_destruction
     end
 end
 
-function destroy_terraform
-    set -l tf_dir "$BENCH_DIR/infrastructure/meta"
+function destroy_terraform_dir
+    set -l tf_dir $argv[1]
+    set -l dir_name $argv[2]
 
     if not test -d "$tf_dir"
         log_warning "Terraform directory not found: $tf_dir"
@@ -108,27 +109,27 @@ function destroy_terraform
     # Check if there's any state to destroy
     set -l state_list (terraform -chdir="$tf_dir" state list 2>/dev/null)
     if test -z "$state_list"
-        log_info "No terraform state found - nothing to destroy"
+        log_info "No terraform state found in $dir_name - nothing to destroy"
         return 0
     end
 
-    log_info "Destroying terraform-managed infrastructure..."
+    log_info "Destroying $dir_name terraform-managed infrastructure..."
 
     # Show what will be destroyed
     echo ""
-    gum spin --spinner dot --title "Planning destruction..." -- \
+    gum spin --spinner dot --title "Planning destruction ($dir_name)..." -- \
         terraform -chdir="$tf_dir" plan -destroy -out=destroy.tfplan
 
     if test "$FORCE" != true
         echo ""
-        if not gum confirm "Proceed with terraform destroy?"
-            log_info "Terraform destroy skipped"
+        if not gum confirm "Proceed with terraform destroy for $dir_name?"
+            log_info "Terraform destroy skipped for $dir_name"
             return 0
         end
     end
 
     # Execute destroy
-    gum spin --spinner dot --title "Destroying AWS resources..." -- \
+    gum spin --spinner dot --title "Destroying $dir_name resources..." -- \
         terraform -chdir="$tf_dir" apply -auto-approve destroy.tfplan
 
     set -l destroy_status $status
@@ -136,11 +137,19 @@ function destroy_terraform
     rm -f "$tf_dir/destroy.tfplan"
 
     if test $destroy_status -ne 0
-        log_error "Terraform destroy failed"
+        log_error "Terraform destroy failed for $dir_name"
         return 1
     end
 
-    log_success "Terraform resources destroyed"
+    log_success "$dir_name terraform resources destroyed"
+end
+
+function destroy_terraform
+    # Destroy AWS task runner infrastructure first (depends on meta)
+    destroy_terraform_dir "$BENCH_DIR/infrastructure/aws" "AWS task runners"
+
+    # Then destroy meta infrastructure
+    destroy_terraform_dir "$BENCH_DIR/infrastructure/meta" "meta"
 end
 
 function cleanup_aws_stragglers
@@ -262,6 +271,12 @@ function cleanup_local_files
     # Clean terraform plan files
     find "$BENCH_DIR/infrastructure" -name "*.tfplan" -delete 2>/dev/null || true
     find "$BENCH_DIR/infrastructure" -name "tfplan" -delete 2>/dev/null || true
+
+    # Clean AWS task runner tfvars (contains run-specific config)
+    if test -f "$BENCH_DIR/infrastructure/aws/terraform.tfvars"
+        rm -f "$BENCH_DIR/infrastructure/aws/terraform.tfvars"
+        log_info "Removed AWS task runner terraform.tfvars"
+    end
 
     # Optionally clean results
     if test -d "$BENCH_DIR/results"

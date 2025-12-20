@@ -6,9 +6,10 @@ require "json"
 
 module TaskRunner
   class ApiClient
-    def initialize(base_url, api_key)
+    def initialize(base_url, api_key, logger: nil)
       @base_url = base_url.chomp("/")
       @api_key = api_key
+      @logger = logger
     end
 
     def claim_task(run_id, provider, instance_type, runner_id)
@@ -49,6 +50,8 @@ module TaskRunner
 
     def post(path, body)
       uri = URI("#{@base_url}#{path}")
+      log_debug "POST #{uri}"
+
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"
       http.open_timeout = 10
@@ -61,12 +64,26 @@ module TaskRunner
 
       response = http.request(request)
 
-      return nil unless response.is_a?(Net::HTTPSuccess)
+      log_debug "Response: #{response.code} #{response.message}"
+
+      unless response.is_a?(Net::HTTPSuccess)
+        log_debug "Non-success response body: #{response.body}"
+        return nil
+      end
+
       return {} if response.body.nil? || response.body.empty?
 
+      log_debug "Response body: #{response.body}"
       JSON.parse(response.body)
-    rescue StandardError
+    rescue StandardError => e
+      log_debug "API request failed: #{e.class}: #{e.message}"
+      log_debug e.backtrace.first(5).join("\n") if e.backtrace
       nil
+    end
+
+    def log_debug(message)
+      return unless @logger
+      @logger.debug("[ApiClient] #{message}")
     end
 
     def put_file(url, file_path)

@@ -73,7 +73,7 @@ services:
       RAILS_SERVE_STATIC_FILES: "true"
       RAILS_LOG_TO_STDOUT: "true"
     ports:
-      - "80:80"
+      - "80:3000"
     restart: unless-stopped
 
 volumes:
@@ -92,7 +92,7 @@ if [ -d "orchestrator" ]; then
   git pull
   cd ..
 else
-  git clone --depth 1 https://github.com/nateberkopec/railsbencher.git repo
+  git clone --depth 1 https://github.com/speedshop/rubybencher.git repo
   cp -r repo/bench-new/orchestrator .
   rm -rf repo
 fi

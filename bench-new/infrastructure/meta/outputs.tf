@@ -3,6 +3,16 @@ output "orchestrator_public_ip" {
   value       = aws_instance.orchestrator.public_ip
 }
 
+output "aws_region" {
+  description = "AWS region where infrastructure is deployed"
+  value       = var.aws_region
+}
+
+output "key_name" {
+  description = "SSH key pair name"
+  value       = var.key_name
+}
+
 output "orchestrator_url" {
   description = "URL of the orchestrator"
   value       = "http://${aws_instance.orchestrator.public_ip}"
@@ -50,8 +60,8 @@ output "bastion_ssh_command" {
 }
 
 output "ssh_command" {
-  description = "SSH command to connect to orchestrator via bastion (ProxyJump)"
-  value       = "ssh -i ~/.ssh/${var.key_name}.pem -J ec2-user@${aws_instance.bastion.public_ip} ec2-user@${aws_instance.orchestrator.private_ip}"
+  description = "SSH command to connect to orchestrator via bastion (ProxyCommand - most reliable)"
+  value       = "ssh -i ~/.ssh/${var.key_name}.pem -o StrictHostKeyChecking=no -o ProxyCommand=\"ssh -i ~/.ssh/${var.key_name}.pem -o StrictHostKeyChecking=no -W %h:%p ec2-user@${aws_instance.bastion.public_ip}\" ec2-user@${aws_instance.orchestrator.private_ip}"
 }
 
 output "ssh_config_example" {

@@ -4,6 +4,8 @@ module TaskRunner
   class Logger
     def initialize(debug_mode: false)
       @debug_mode = debug_mode
+      # Ensure stdout is unbuffered so logs appear immediately in docker logs
+      $stdout.sync = true
     end
 
     def info(message)

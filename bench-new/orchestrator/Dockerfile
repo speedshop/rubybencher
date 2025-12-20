@@ -2,6 +2,7 @@
 # Used by docker-compose.yml for local development and CI
 
 ARG RUBY_VERSION=3.4.7
+ARG PRECOMPILE_ASSETS=false
 FROM docker.io/library/ruby:$RUBY_VERSION-slim
 
 # Install dependencies
@@ -24,6 +25,12 @@ RUN bundle install
 
 # Copy application code
 COPY . .
+
+# Precompile assets for production (pass --build-arg PRECOMPILE_ASSETS=true)
+ARG PRECOMPILE_ASSETS=false
+RUN if [ "$PRECOMPILE_ASSETS" = "true" ]; then \
+      SECRET_KEY_BASE_DUMMY=1 bin/rails assets:precompile; \
+    fi
 
 # Prepare database and start server
 EXPOSE 3000

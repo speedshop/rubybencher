@@ -46,17 +46,15 @@ variable "s3_bucket_prefix" {
 }
 
 variable "aws_access_key_id" {
-  description = "AWS access key ID for S3 access"
+  description = "AWS access key ID for S3 access. Set TF_VAR_aws_access_key_id or pass -var"
   type        = string
   sensitive   = true
-  default     = ""
 }
 
 variable "aws_secret_access_key" {
-  description = "AWS secret access key for S3 access"
+  description = "AWS secret access key for S3 access. Set TF_VAR_aws_secret_access_key or pass -var"
   type        = string
   sensitive   = true
-  default     = ""
 }
 
 variable "allowed_ssh_cidr" {

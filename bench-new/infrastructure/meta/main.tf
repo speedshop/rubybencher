@@ -282,7 +282,7 @@ resource "aws_instance" "orchestrator" {
     inline = [
       "cd /opt/orchestrator",
       "sudo tar -xzf /tmp/orchestrator.tar.gz",
-      "cd /opt/orchestrator/orchestrator && sudo docker build -t orchestrator:latest .",
+      "cd /opt/orchestrator/orchestrator && sudo docker build --build-arg PRECOMPILE_ASSETS=true -t orchestrator:latest .",
       "cd /opt/orchestrator && sudo docker-compose up -d",
       "echo 'Waiting for services to start...'",
       "sleep 20",

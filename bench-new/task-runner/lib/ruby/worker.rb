@@ -21,8 +21,8 @@ module TaskRunner
       @no_exit = no_exit
       @script_dir = script_dir || File.expand_path("../..", __dir__)
       @log_file = log_file
-      @api = ApiClient.new(orchestrator_url, api_key)
       @logger = Logger.new(debug_mode: debug_mode)
+      @api = ApiClient.new(orchestrator_url, api_key, logger: @logger)
     end
 
     def run

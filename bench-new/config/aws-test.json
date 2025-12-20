@@ -1,0 +1,10 @@
+{
+  "ruby_version": "3.4.1",
+  "runs_per_instance_type": 1,
+  "aws": [
+    {
+      "instance_type": "c8g.medium",
+      "alias": "c8g"
+    }
+  ]
+}
