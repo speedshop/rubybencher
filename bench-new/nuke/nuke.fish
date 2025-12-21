@@ -117,8 +117,8 @@ function destroy_terraform_dir
 
     # Show what will be destroyed
     echo ""
-    gum spin --spinner dot --title "Planning destruction ($dir_name)..." -- \
-        terraform -chdir="$tf_dir" plan -destroy -out=destroy.tfplan
+    log_info "Planning destruction ($dir_name)..."
+    terraform -chdir="$tf_dir" plan -destroy -out=destroy.tfplan
 
     if test "$FORCE" != true
         echo ""
@@ -129,8 +129,8 @@ function destroy_terraform_dir
     end
 
     # Execute destroy
-    gum spin --spinner dot --title "Destroying $dir_name resources..." -- \
-        terraform -chdir="$tf_dir" apply -auto-approve destroy.tfplan
+    log_info "Destroying $dir_name resources..."
+    terraform -chdir="$tf_dir" apply -auto-approve destroy.tfplan
 
     set -l destroy_status $status
 

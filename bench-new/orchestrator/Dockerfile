@@ -34,4 +34,7 @@ RUN if [ "$PRECOMPILE_ASSETS" = "true" ]; then \
 
 # Prepare database and start server
 EXPOSE 3000
-CMD ["sh", "-c", "rm -f tmp/pids/server.pid && bin/rails db:prepare && (bin/rails db:schema:load:queue 2>/dev/null || true) && bin/rails server -b 0.0.0.0"]
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["bin/rails", "server", "-b", "0.0.0.0"]

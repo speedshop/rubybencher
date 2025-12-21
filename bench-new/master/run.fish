@@ -261,10 +261,10 @@ function setup_infrastructure
     end
 
     # Plan and apply
-    gum spin --spinner dot --title "Planning infrastructure changes..." -- \
-        terraform -chdir="$tf_dir" plan -out=tfplan
-    gum spin --spinner dot --title "Applying infrastructure..." -- \
-        terraform -chdir="$tf_dir" apply -auto-approve tfplan
+    log_info "Planning infrastructure changes..."
+    terraform -chdir="$tf_dir" plan -out=tfplan
+    log_info "Applying infrastructure..."
+    terraform -chdir="$tf_dir" apply -auto-approve tfplan
 
     if test $status -ne 0
         log_error "Terraform apply failed"
@@ -348,6 +348,7 @@ function wait_for_orchestrator
         if test "$response" = "200"
             log_success "Orchestrator is ready"
             log_info "Orchestrator URL: $ORCHESTRATOR_URL"
+            open "$ORCHESTRATOR_URL"
             return 0
         end
 
@@ -558,11 +559,11 @@ debug_mode      = $debug_flag" > "$tf_dir/terraform.tfvars"
     end
 
     # Plan and apply
-    gum spin --spinner dot --title "Planning AWS task runner infrastructure..." -- \
-        terraform -chdir="$tf_dir" plan -out=tfplan
+    log_info "Planning AWS task runner infrastructure..."
+    terraform -chdir="$tf_dir" plan -out=tfplan
 
-    gum spin --spinner dot --title "Creating AWS task runner instances..." -- \
-        terraform -chdir="$tf_dir" apply -auto-approve tfplan
+    log_info "Creating AWS task runner instances..."
+    terraform -chdir="$tf_dir" apply -auto-approve tfplan
 
     if test $status -ne 0
         log_error "Failed to create AWS task runner instances"
@@ -792,7 +793,7 @@ function cleanup_on_interrupt
 
     if test "$NON_INTERACTIVE" = false
         if gum confirm "Run nuke script to clean up infrastructure?"
-            fish "$BENCH_DIR/nuke/nuke.fish"
+            fish "$BENCH_DIR/nuke/nuke.fish" -f
         end
     end
 
@@ -880,7 +881,7 @@ function main
     echo ""
     if test "$NON_INTERACTIVE" = false
         if gum confirm "Run nuke script to clean up infrastructure?"
-            fish "$BENCH_DIR/nuke/nuke.fish"
+            fish "$BENCH_DIR/nuke/nuke.fish" -f
         end
     end
 end

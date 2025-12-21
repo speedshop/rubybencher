@@ -19,18 +19,34 @@
 <body>
   <div class="left-column">
     <h1>The Great Cross-Cloud Ruby Benchmark</h1>
-    <p class="subtitle">Comparing iteration times across <%= instance_names.size %> machine types on several public clouds. Each dot is one non-warmup iteration.</p>
+    <p class="subtitle">Comparing iteration times across <%= instance_names.size %> machine types on several public clouds.</p>
     <p>This site was borne of my continuous frustration at <a href="https://speedshop.co">Speedshop</a> of clients running on old generation AWS instances, when I knew "free speed" was on the table if they just upgraded to a newer generation. However, I could never quantify the speed boost. This page simply runs <a href="https://github.com/ruby/ruby-bench">ruby-bench</a>, a series of <i>mostly</i> CPU-bound benchmarks maintained by Ruby core and the YJIT developers. We run across multiple instances to reduce the effect of noisy neighbors.</p>
-    <p>For Rails apps, the most relevant benchmark is likely <pre>shipit<pre>. Keep in mind that this benchmark likely still overstates the performance difference because it runs the database in-memory, which makes the benchmark more CPU-bound than a real-world app with a real database.</p>
+    <p>For Rails apps, the most relevant benchmark is likely <code>shipit</code>. Keep in mind that this benchmark likely still overstates the performance difference because it runs the database in-memory, which makes the benchmark more CPU-bound than a real-world app with a real database.</p>
     <p>All benchmarks were run on <%= run_date %> with YJIT enabled on Ruby <%= ruby_version %>. View the code for this page <a href="https://github.com/speedshop/rubybencher">here.</a></p>
   </div>
 
-  <div class="mobile-legend" id="mobile-legend">
-    <% instance_names.each do |inst| %>
-    <span data-instance="<%= inst %>"><span class="swatch"></span><%= inst %></span>
+  <div class="instance-legend" id="instance-legend">
+    <%
+      # Group instances by provider (first part of name before hyphen)
+      grouped = instance_names.group_by { |name| name.split('-', 2).first }
+    %>
+    <% grouped.each_with_index do |(provider, instances), idx| %>
+    <span class="provider-group">
+      <span class="provider-name"><%= provider %>:</span>
+      <% instances.each do |inst| %>
+      <span class="instance-checkbox checked" data-instance="<%= inst %>">
+        <span class="checkbox-visual"></span>
+        <span class="instance-label"><%= inst.sub("#{provider}-", '') %></span>
+      </span>
+      <% end %>
+    </span><% if idx < grouped.size - 1 %><span class="provider-divider">|</span><% end %>
     <% end %>
+    <span class="legend-actions">
+      <a href="#" id="select-all">select all</a> | <a href="#" id="deselect-all">deselect all</a>
+    </span>
   </div>
-  <div class="summary-beeswarm" id="summary-beeswarm"></div>
+
+  <div id="summary-chart"></div>
 
   <div class="main-layout">
     <div class="left-column">
@@ -41,7 +57,8 @@
         <span>300%+</span>
         <span style="margin-left: 8px; color: #999;">(% slower than fastest)</span>
       </div>
-      <div class="table-wrapper">
+      <!-- Desktop table: benchmarks as rows, instances as columns -->
+      <div class="table-wrapper desktop-table">
         <div class="top-scrollbar" id="top-scrollbar">
           <div class="top-scrollbar-inner" id="top-scrollbar-inner"></div>
         </div>
@@ -108,24 +125,62 @@
         </table>
         </div>
       </div>
-    </div>
 
-    <div class="right-column">
-      <div class="instance-legend" id="legend">
-        <% instance_names.each do |inst| %>
-        <span data-instance="<%= inst %>"><span class="swatch"></span><%= inst %></span>
-        <% end %>
+      <!-- Mobile table: instances as rows, benchmarks as columns -->
+      <div class="table-wrapper mobile-table">
+        <div class="table-container">
+          <table id="results-table-mobile">
+          <thead>
+            <tr>
+              <th>Instance</th>
+              <th class="col-divider">all</th>
+              <% all_benchmarks.each do |benchmark| %>
+              <th class="col-divider"><%= benchmark %></th>
+              <% end %>
+            </tr>
+          </thead>
+          <tbody>
+            <% instance_names.each do |instance| %>
+            <tr data-instance="<%= instance %>">
+              <td class="instance-name"><%= instance %></td>
+              <%
+                all_time = all_row[instance]
+                all_relative = all_row[instance.to_s + "_relative"] || 0
+              %>
+              <td class="mobile-time-cell col-divider" data-relative="<%= all_relative %>">
+                <span class="mobile-time"><%= all_time %></span>
+                <span class="mobile-rel rel-cell" data-relative="<%= all_relative %>"><% if all_relative > 0 %>+<%= all_relative %>%<% end %></span>
+              </td>
+              <% table_data.each do |row| %>
+              <%
+                time = row[instance]
+                relative = row[instance.to_s + "_relative"] || 0
+                ci = row[instance.to_s + "_ci"]
+              %>
+              <td class="mobile-time-cell col-divider" data-relative="<%= relative %>">
+                <% if time %>
+                <span class="mobile-time"><%= time %></span>
+                <span class="mobile-rel rel-cell" data-relative="<%= relative %>"><% if relative > 0 %>+<%= relative %>%<% end %></span>
+                <% else %>
+                <span class="na">—</span>
+                <% end %>
+              </td>
+              <% end %>
+            </tr>
+            <% end %>
+          </tbody>
+        </table>
+        </div>
       </div>
-      <div id="beeswarm-matrix"></div>
     </div>
-  </div>
 
-  <div class="tooltip" id="tooltip" style="display:none"></div>
+  </div>
 
   <script>
     window.reportConfig = {
       instances: <%= instance_names.to_json %>,
-      benchmarks: <%= all_benchmarks.to_json %>
+      benchmarks: <%= all_benchmarks.to_json %>,
+      summary: <%= summary.to_json %>
     };
   </script>
   <script type="module" src="js/report.js"></script>
