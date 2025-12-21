@@ -1,0 +1,147 @@
+#!/usr/bin/env fish
+# bench - Unified entrypoint for Ruby Cross Cloud Benchmark
+#
+# Usage:
+#   bench <command> [args...]
+#
+# Commands:
+#   run       Run benchmarks (delegates to bench-new/master/run.fish)
+#   nuke      Destroy all infrastructure (delegates to bench-new/nuke/nuke.fish)
+#   site      Generate HTML report from results
+#   serve     Serve the site locally on port 8080
+#   publish   Publish site to Cloudflare Pages
+
+set -g SCRIPT_DIR (dirname (realpath (status --current-filename)))
+
+function print_usage
+    gum style \
+        --border rounded \
+        --align center \
+        --width 50 \
+        --margin "1" \
+        --padding "1" \
+        --foreground 212 \
+        "Ruby Cross Cloud Benchmark"
+
+    echo ""
+    echo "Usage: bench <command> [args...]"
+    echo ""
+    echo "Commands:"
+    echo "  run       Run benchmarks"
+    echo "  nuke      Destroy all infrastructure"
+    echo "  site      Generate HTML report from results"
+    echo "  serve     Serve the site locally on port 8080"
+    echo "  publish   Publish site to Cloudflare Pages"
+    echo ""
+    echo "Run 'bench <command> --help' for command-specific help."
+end
+
+function cmd_run
+    exec $SCRIPT_DIR/bench-new/master/run.fish $argv
+end
+
+function cmd_nuke
+    exec $SCRIPT_DIR/bench-new/nuke/nuke.fish $argv
+end
+
+function cmd_site
+    set -l run_ids $argv
+
+    if test (count $run_ids) -eq 0
+        gum style --foreground 212 "→ Generating site from most recent results..."
+    else
+        gum style --foreground 212 "→ Generating site from: $run_ids"
+    end
+
+    ruby $SCRIPT_DIR/site/generate_report.rb $run_ids
+
+    if test $status -eq 0
+        gum style --foreground 82 "✓ Site generated at site/public/"
+    else
+        gum style --foreground 196 "✗ Site generation failed"
+        return 1
+    end
+end
+
+function cmd_serve
+    set -l public_dir $SCRIPT_DIR/site/public
+
+    if not test -f "$public_dir/index.html"
+        gum style --foreground 196 "✗ No site found at site/public/"
+        gum style --foreground 214 "  Run 'bench site' first to generate the report."
+        return 1
+    end
+
+    gum style --foreground 212 "→ Serving site at http://localhost:8080"
+    gum style --foreground 245 "  Press Ctrl+C to stop"
+
+    ruby -run -e httpd $public_dir -p 8080
+end
+
+function cmd_publish
+    if not command -q wrangler
+        gum style --foreground 196 "✗ wrangler not found. Install with: npm install -g wrangler"
+        return 1
+    end
+
+    set -l public_dir $SCRIPT_DIR/site/public
+
+    if not test -f "$public_dir/index.html"
+        gum style --foreground 196 "✗ No site found at site/public/"
+        gum style --foreground 214 "  Run 'bench site' first to generate the report."
+        return 1
+    end
+
+    gum style --foreground 212 "→ Publishing site to Cloudflare Pages..."
+
+    wrangler pages deploy $public_dir --project-name rubybench
+
+    if test $status -eq 0
+        gum style --foreground 82 "✓ Site published!"
+    else
+        gum style --foreground 196 "✗ Publish failed"
+        return 1
+    end
+end
+
+function main
+    if test (count $argv) -eq 0
+        # No args - show interactive picker
+        set -l cmd (gum choose --header "Select a command:" "run" "nuke" "site" "serve" "publish" "help")
+
+        if test -z "$cmd"
+            return 0
+        end
+
+        if test "$cmd" = "help"
+            print_usage
+            return 0
+        end
+
+        # Re-run with selected command
+        main $cmd
+        return $status
+    end
+
+    switch $argv[1]
+        case run
+            cmd_run $argv[2..]
+        case nuke
+            cmd_nuke $argv[2..]
+        case site
+            cmd_site $argv[2..]
+        case serve
+            cmd_serve $argv[2..]
+        case publish
+            cmd_publish $argv[2..]
+        case -h --help help
+            print_usage
+        case '*'
+            gum style --foreground 196 "✗ Unknown command: $argv[1]"
+            echo ""
+            print_usage
+            return 1
+    end
+end
+
+main $argv
