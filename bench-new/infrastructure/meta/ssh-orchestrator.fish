@@ -10,8 +10,10 @@
 set -l SCRIPT_DIR (dirname (status --current-filename))
 
 # Get connection info from terraform
+# Note: We use orchestrator's private IP because the security group only allows
+# SSH from the bastion's security group, not from public IPs
 set -l bastion_ip (terraform -chdir="$SCRIPT_DIR" output -raw bastion_public_ip 2>/dev/null)
-set -l orchestrator_ip (terraform -chdir="$SCRIPT_DIR" output -raw orchestrator_public_ip 2>/dev/null)
+set -l orchestrator_ip (terraform -chdir="$SCRIPT_DIR" output -raw orchestrator_private_ip 2>/dev/null)
 set -l key_name (terraform -chdir="$SCRIPT_DIR" output -raw key_name 2>/dev/null)
 
 if test -z "$bastion_ip" -o -z "$orchestrator_ip"

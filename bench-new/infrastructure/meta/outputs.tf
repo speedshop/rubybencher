@@ -3,6 +3,11 @@ output "orchestrator_public_ip" {
   value       = aws_instance.orchestrator.public_ip
 }
 
+output "orchestrator_private_ip" {
+  description = "Private IP address of the orchestrator (for SSH via bastion)"
+  value       = aws_instance.orchestrator.private_ip
+}
+
 output "aws_region" {
   description = "AWS region where infrastructure is deployed"
   value       = var.aws_region
@@ -59,24 +64,13 @@ output "bastion_ssh_command" {
   value       = "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${aws_instance.bastion.public_ip}"
 }
 
-output "ssh_command" {
-  description = "SSH command to connect to orchestrator via bastion (ProxyCommand - most reliable)"
-  value       = "ssh -i ~/.ssh/${var.key_name}.pem -o StrictHostKeyChecking=no -o ProxyCommand=\"ssh -i ~/.ssh/${var.key_name}.pem -o StrictHostKeyChecking=no -W %h:%p ec2-user@${aws_instance.bastion.public_ip}\" ec2-user@${aws_instance.orchestrator.private_ip}"
-}
-
-output "ssh_config_example" {
-  description = "Example SSH config for ProxyJump setup"
+output "ssh_helper_scripts" {
+  description = "Helper scripts for SSH access (these read IPs from terraform dynamically)"
   value       = <<-EOT
-    # Add to ~/.ssh/config:
-    Host railsbencher-bastion
-      HostName ${aws_instance.bastion.public_ip}
-      User ec2-user
-      IdentityFile ~/.ssh/${var.key_name}.pem
+    # SSH to orchestrator:
+    ./infrastructure/meta/ssh-orchestrator.fish
 
-    Host railsbencher-orchestrator
-      HostName ${aws_instance.orchestrator.private_ip}
-      User ec2-user
-      IdentityFile ~/.ssh/${var.key_name}.pem
-      ProxyJump railsbencher-bastion
+    # SSH to task runner (get IPs from 'terraform output' in infrastructure/aws):
+    ./infrastructure/meta/ssh-task-runner.fish <bastion_ip> <task_runner_ip>
   EOT
 }
