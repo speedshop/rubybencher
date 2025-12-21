@@ -17,6 +17,7 @@ ENV["S3_FORCE_PATH_STYLE"] ||= "true"
 
 require_relative "../config/environment"
 require "rails/test_help"
+require "minitest/mock"
 
 module ActiveSupport
   class TestCase

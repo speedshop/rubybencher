@@ -21,6 +21,18 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 9000:9000
     steps:
       - uses: actions/checkout@v4
 
@@ -30,12 +42,20 @@ jobs:
           bundler-cache: true
           working-directory: bench-new/orchestrator
 
+      - name: Create MinIO Bucket
+        run: |
+          docker run --rm --network host minio/mc \
+            sh -c "mc alias set myminio http://localhost:9000 minioadmin minioadmin && mc mb myminio/railsbencher-results --ignore-existing"
+
       - name: Orchestrator Unit Tests
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/orchestrator_test
           QUEUE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/orchestrator_test
           RAILS_ENV: test
           PARALLEL_WORKERS: 1
+          S3_ENDPOINT: http://localhost:9000
+          S3_UPLOAD_ENDPOINT: http://localhost:9000
+          S3_DOWNLOAD_ENDPOINT: http://localhost:9000
         run: |
           cd bench-new/orchestrator
           bin/rails db:create db:schema:load
@@ -43,10 +63,12 @@ jobs:
           bin/rails test
 
       - name: Task Runner Tests
+        env:
+          MOCK_ALWAYS_SUCCEED: "1"
         run: |
           cd bench-new/task-runner
           bundle install
-          bundle exec ruby -Ilib -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require "./#{f}" }'
+          bundle exec ruby -Ilib/ruby -Itest -e 'Dir["test/**/*_test.rb"].each { |f| require "./#{f}" }'
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -79,6 +101,9 @@ jobs:
 
       - name: Run E2E Tests (Background Jobs)
         run: ./test/orchestrator/e2e_tests.sh
+
+      - name: Run Task Runner E2E Integration Test
+        run: ./test/integration/task_runner_e2e_test.sh
 
       - name: Show Logs on Failure
         if: failure()
@@ -138,33 +163,8 @@ jobs:
         with:
           ruby-version: '3.4'
 
-      - name: Setup Sample Results
-        run: |
-          mkdir -p results/ci-test/local-docker-1
-          mkdir -p site/static/css site/static/js
-          cat > results/ci-test/local-docker-1/output.json << 'EOF'
-          {
-            "raw_data": {
-              "=yjit": {
-                "app_aobench": {
-                  "RUBY_DESCRIPTION": "ruby 3.4.1 (2024-12-25 revision abcd1234) +YJIT +PRISM [x86_64-linux]",
-                  "bench": [1.5, 1.2, 1.1, 1.0, 1.05]
-                }
-              }
-            }
-          }
-          EOF
-          cat > results/ci-test/local-docker-1/metadata.json << 'EOF'
-          {"provider":"local","instance_type":"docker","ruby_version":"3.4.1"}
-          EOF
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Generate Report
-        run: |
-          cd site
-          ruby generate_report.rb
-
-      - name: Verify Output
-        run: |
-          test -f site/public/index.html || (echo "index.html not generated" && exit 1)
-          grep -q "app_aobench" site/public/index.html || (echo "Benchmark not found in report" && exit 1)
-          echo "Report generated successfully"
+      - name: Run Site Generator Integration Test
+        run: ./test/integration/site_generator_test.sh

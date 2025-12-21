@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18
+    image: postgres:16
     environment:
       POSTGRES_USER: orchestrator
       POSTGRES_PASSWORD: orchestrator_dev
