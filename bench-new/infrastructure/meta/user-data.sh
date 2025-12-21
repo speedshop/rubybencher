@@ -38,8 +38,6 @@ ENVEOF
 
 # Create docker-compose file
 cat > /opt/orchestrator/docker-compose.yml << 'COMPOSEEOF'
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16
@@ -74,6 +72,32 @@ services:
       RAILS_LOG_TO_STDOUT: "true"
     ports:
       - "80:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    image: orchestrator:latest
+    command: bin/jobs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+    environment:
+      RAILS_ENV: production
+      RAILS_MASTER_KEY: $${RAILS_MASTER_KEY}
+      DATABASE_URL: postgres://orchestrator:$${POSTGRES_PASSWORD}@postgres:5432/orchestrator_production
+      AWS_REGION: $${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: $${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: $${AWS_SECRET_ACCESS_KEY}
+      S3_BUCKET_NAME: $${S3_BUCKET_NAME}
+      API_KEY: $${API_KEY}
+      RAILS_LOG_TO_STDOUT: "true"
     restart: unless-stopped
 
 volumes:

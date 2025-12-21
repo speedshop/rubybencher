@@ -106,21 +106,18 @@ function destroy_terraform_dir
         return 0
     end
 
-    # Check if there's any state to destroy
-    set -l state_list (terraform -chdir="$tf_dir" state list 2>/dev/null)
-    if test -z "$state_list"
-        log_info "No terraform state found in $dir_name - nothing to destroy"
+    # Check for tfvars file - required for destroy to work without prompts
+    if not test -f "$tf_dir/terraform.tfvars"
+        log_info "No terraform.tfvars in $dir_name - nothing to destroy"
         return 0
     end
 
     log_info "Destroying $dir_name terraform-managed infrastructure..."
 
-    # Show what will be destroyed
-    echo ""
-    log_info "Planning destruction ($dir_name)..."
-    terraform -chdir="$tf_dir" plan -destroy -out=destroy.tfplan
-
     if test "$FORCE" != true
+        # Show plan for non-forced destroys
+        terraform -chdir="$tf_dir" plan -destroy
+
         echo ""
         if not gum confirm "Proceed with terraform destroy for $dir_name?"
             log_info "Terraform destroy skipped for $dir_name"
@@ -130,13 +127,9 @@ function destroy_terraform_dir
 
     # Execute destroy
     log_info "Destroying $dir_name resources..."
-    terraform -chdir="$tf_dir" apply -auto-approve destroy.tfplan
+    terraform -chdir="$tf_dir" destroy -auto-approve -parallelism=30
 
-    set -l destroy_status $status
-
-    rm -f "$tf_dir/destroy.tfplan"
-
-    if test $destroy_status -ne 0
+    if test $status -ne 0
         log_error "Terraform destroy failed for $dir_name"
         return 1
     end

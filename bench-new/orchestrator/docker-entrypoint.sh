@@ -11,7 +11,7 @@ bin/rails db:prepare
 # We check by trying to query the table - if it fails, load the schema
 if ! bin/rails runner "SolidQueue::Job.first" 2>/dev/null; then
   echo "Loading SolidQueue schema..."
-  bin/rails db:schema:load:queue
+  DISABLE_DATABASE_ENVIRONMENT_CHECK=1 bin/rails db:schema:load:queue
 fi
 
 # Execute the main command

@@ -260,18 +260,14 @@ function setup_infrastructure
             terraform -chdir="$tf_dir" init
     end
 
-    # Plan and apply
-    log_info "Planning infrastructure changes..."
-    terraform -chdir="$tf_dir" plan -out=tfplan
+    # Apply infrastructure
     log_info "Applying infrastructure..."
-    terraform -chdir="$tf_dir" apply -auto-approve tfplan
+    terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
 
     if test $status -ne 0
         log_error "Terraform apply failed"
         exit 1
     end
-
-    rm -f "$tf_dir/tfplan"
     log_success "Infrastructure ready"
 end
 
@@ -558,19 +554,14 @@ debug_mode      = $debug_flag" > "$tf_dir/terraform.tfvars"
         cat "$tf_dir/terraform.tfvars"
     end
 
-    # Plan and apply
-    log_info "Planning AWS task runner infrastructure..."
-    terraform -chdir="$tf_dir" plan -out=tfplan
-
+    # Apply infrastructure
     log_info "Creating AWS task runner instances..."
-    terraform -chdir="$tf_dir" apply -auto-approve tfplan
+    terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
 
     if test $status -ne 0
         log_error "Failed to create AWS task runner instances"
         exit 1
     end
-
-    rm -f "$tf_dir/tfplan"
 
     # Show created instances
     set -l instances (terraform -chdir="$tf_dir" output -json task_runner_instances 2>/dev/null)
