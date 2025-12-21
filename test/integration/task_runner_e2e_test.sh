@@ -40,6 +40,7 @@ cd "$TASK_RUNNER_DIR"
 log_info "Starting task runner container..."
 docker run --rm \
     --network host \
+    --add-host=host.docker.internal:host-gateway \
     -e MOCK_ALWAYS_SUCCEED="1" \
     -v "$TASK_RUNNER_DIR":/app \
     -w /app \
