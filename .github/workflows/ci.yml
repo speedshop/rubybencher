@@ -43,8 +43,8 @@ jobs:
 
       - name: Create MinIO Bucket
         run: |
-          docker run --rm --network host minio/mc \
-            sh -c "mc alias set myminio http://localhost:9000 minioadmin minioadmin && mc mb myminio/railsbencher-results --ignore-existing"
+          docker run --rm --network host --entrypoint /bin/sh minio/mc -c \
+            "mc alias set myminio http://localhost:9000 minioadmin minioadmin && mc mb myminio/railsbencher-results --ignore-existing"
 
       - name: Orchestrator Unit Tests
         env:
