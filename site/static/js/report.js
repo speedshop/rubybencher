@@ -1,4 +1,4 @@
-const { instances = [], benchmarks = [], summary = {} } = window.reportConfig || {};
+const { instances = [], benchmarks = [] } = window.reportConfig || {};
 
 // D3 categorical color palette
 const colorPalette = ['#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f', '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'];
@@ -36,6 +36,11 @@ let isFirstClick = true;
 // Get all checkbox elements
 const checkboxItems = document.querySelectorAll('.instance-checkbox');
 
+// Summary chart data and elements (populated after fetch)
+let summaryData = null;
+let summaryLines = [];
+const tooltipEl = document.getElementById('tooltip');
+
 // Update visibility based on selected instances
 function updateVisibility() {
   // Update table columns (desktop)
@@ -71,8 +76,11 @@ function updateVisibility() {
     tr.style.display = selectedInstances.has(instance) ? '' : 'none';
   });
 
-  // Update summary chart
-  renderSummaryChart();
+  // Update summary chart lines visibility
+  summaryLines.forEach(line => {
+    const inst = d3.select(line).datum().instance;
+    line.style.display = selectedInstances.has(inst) ? '' : 'none';
+  });
 
   // Sync scrollbar width after column changes
   syncScrollbarWidth();
@@ -153,91 +161,109 @@ if (benchmarkParam) {
   filterInput.dispatchEvent(new Event('input'));
 }
 
-// Summary chart
-function renderSummaryChart() {
+// Legend highlight (all summary lines for an instance)
+function highlightInstance(inst) {
+  summaryLines.forEach(line => {
+    const d = d3.select(line).datum();
+    const isTarget = d.instance === inst;
+    line.setAttribute('opacity', isTarget ? 1 : 0.1);
+    line.setAttribute('stroke-width', isTarget ? 2 : 1);
+  });
+}
+
+function clearInstanceHighlight() {
+  summaryLines.forEach(line => {
+    if (selectedInstances.has(d3.select(line).datum().instance)) {
+      line.setAttribute('opacity', 1);
+    }
+    line.setAttribute('stroke-width', 1);
+  });
+}
+
+// Summary railway chart
+function renderSummaryChart(data) {
   const container = d3.select('#summary-chart');
   container.selectAll('*').remove();
+  summaryLines = [];
 
-  const visibleInstances = instances.filter(i => selectedInstances.has(i));
+  const width = container.node().getBoundingClientRect().width || 800;
+  const height = 62;
 
-  const margin = { top: 10, right: 20, bottom: 20, left: 120 };
-  const barHeight = 24;
-  const minHeight = 50; // Minimum height when no instances selected
-  const width = container.node().getBoundingClientRect().width || 600;
-  const height = visibleInstances.length === 0
-    ? minHeight
-    : margin.top + margin.bottom + visibleInstances.length * barHeight;
+  // Group by benchmark and calculate relative percentages
+  const byBench = d3.group(data, d => d.benchmark);
+  const avgData = [];
+  byBench.forEach((points, benchmark) => {
+    const byInstance = d3.group(points, d => d.instance);
+    const instanceAvgs = [];
+    byInstance.forEach((instPoints, instance) => {
+      instanceAvgs.push({ instance, avg: d3.mean(instPoints, d => d.time) });
+    });
+    const minAvg = d3.min(instanceAvgs, d => d.avg);
+    instanceAvgs.forEach(({ instance, avg }) => {
+      avgData.push({
+        benchmark, instance,
+        avgTime: Math.round(avg),
+        relativePercent: ((avg / minAvg) - 1) * 100
+      });
+    });
+  });
+
+  // Use 95th percentile for x-axis to exclude outliers
+  const sortedRelatives = avgData.map(d => d.relativePercent).sort((a, b) => a - b);
+  const p95Index = Math.floor(sortedRelatives.length * 0.95);
+  const maxRelative = sortedRelatives[p95Index] || 100;
 
   const svg = container.append('svg')
     .attr('width', width)
-    .attr('height', height);
+    .attr('height', height)
+    .attr('viewBox', `0 0 ${width} ${height}`)
+    .attr('preserveAspectRatio', 'xMidYMid meet');
 
-  // Calculate relative performance for visible instances only
-  const visibleData = visibleInstances.map(inst => ({
-    instance: inst,
-    totalTime: summary[inst]?.total_time || 0,
-    color: colors[inst]
-  }));
+  const x = d3.scaleLinear().domain([0, maxRelative]).range([5, width - 5]);
 
-  let maxRelative = 100; // Default for empty state
-  if (visibleData.length > 0) {
-    const minTime = d3.min(visibleData, d => d.totalTime);
-    visibleData.forEach(d => {
-      d.relative = ((d.totalTime / minTime) - 1) * 100;
-    });
-    maxRelative = d3.max(visibleData, d => d.relative) || 100;
-  }
-
-  const x = d3.scaleLinear()
-    .domain([0, Math.max(maxRelative, 10)])
-    .range([margin.left, width - margin.right]);
-
-  const y = d3.scaleBand()
-    .domain(visibleInstances)
-    .range([margin.top, height - margin.bottom])
-    .padding(0.2);
-
-  // Bars (only if we have data)
-  if (visibleData.length > 0) {
-    svg.selectAll('.bar')
-      .data(visibleData)
-      .enter().append('rect')
-      .attr('class', 'bar')
-      .attr('x', margin.left)
-      .attr('y', d => y(d.instance))
-      .attr('width', d => Math.max(x(d.relative) - margin.left, 2))
-      .attr('height', y.bandwidth())
-      .attr('fill', d => d.color);
-
-    // Instance labels
-    svg.selectAll('.instance-label')
-      .data(visibleData)
-      .enter().append('text')
-      .attr('class', 'chart-label')
-      .attr('x', margin.left - 6)
-      .attr('y', d => y(d.instance) + y.bandwidth() / 2)
-      .attr('dy', '0.35em')
-      .attr('text-anchor', 'end')
-      .text(d => d.instance);
-
-    // Percentage labels
-    svg.selectAll('.percent-label')
-      .data(visibleData)
-      .enter().append('text')
-      .attr('class', 'chart-label percent')
-      .attr('x', d => x(d.relative) + 4)
-      .attr('y', d => y(d.instance) + y.bandwidth() / 2)
-      .attr('dy', '0.35em')
-      .attr('text-anchor', 'start')
-      .text(d => d.relative === 0 ? 'fastest' : `+${d.relative.toFixed(1)}%`);
-  }
-
-  // X axis (always drawn)
   svg.append('g')
-    .attr('transform', `translate(0,${height - margin.bottom})`)
-    .call(d3.axisBottom(x).ticks(5).tickFormat(d => d + '%'))
+    .attr('class', 'axis')
+    .attr('transform', `translate(0,${height - 8})`)
     .selectAll('text')
-    .attr('class', 'axis-label');
+    .data(x.ticks(10))
+    .enter().append('text')
+    .attr('x', d => x(d))
+    .attr('y', 7)
+    .attr('text-anchor', 'middle')
+    .attr('class', 'axis-label')
+    .text(d => d + '%');
+
+  svg.selectAll('.summary-benchmark-line')
+    .data(avgData)
+    .enter().append('line')
+    .attr('class', 'summary-line summary-benchmark-line')
+    .attr('x1', d => x(d.relativePercent))
+    .attr('x2', d => x(d.relativePercent))
+    .attr('y1', 4)
+    .attr('y2', height - 12)
+    .attr('stroke', d => colors[d.instance])
+    .attr('stroke-width', 1)
+    .attr('opacity', 1)
+    .each(function() { summaryLines.push(this); })
+    .on('pointerenter', function(event, d) {
+      this.setAttribute('stroke-width', 2);
+      tooltipEl.style.display = 'block';
+      tooltipEl.style.left = (event.pageX + 10) + 'px';
+      tooltipEl.style.top = (event.pageY - 10) + 'px';
+      tooltipEl.innerHTML = `${d.instance}: ${d.avgTime}ms (+${d.relativePercent.toFixed(1)}%)<br><em>${d.benchmark}</em>`;
+      highlightInstance(d.instance);
+    })
+    .on('pointerleave', function() {
+      this.setAttribute('stroke-width', 1);
+      tooltipEl.style.display = 'none';
+      clearInstanceHighlight();
+    });
+
+  // Apply current visibility state
+  summaryLines.forEach(line => {
+    const inst = d3.select(line).datum().instance;
+    line.style.display = selectedInstances.has(inst) ? '' : 'none';
+  });
 }
 
 // Sync top scrollbar with table container
@@ -251,10 +277,6 @@ function syncScrollbarWidth() {
   topScrollbarInner.style.width = resultsTableEl.scrollWidth + 'px';
 }
 syncScrollbarWidth();
-window.addEventListener('resize', () => {
-  syncScrollbarWidth();
-  renderSummaryChart();
-});
 
 // Sync scroll positions
 let scrollingSrc = null;
@@ -271,4 +293,18 @@ tableContainer.addEventListener('scroll', () => {
 
 // Initial render
 syncCheckboxes();
-renderSummaryChart();
+
+// Fetch data.json and render summary chart
+fetch('data.json')
+  .then(r => r.json())
+  .then(data => {
+    summaryData = data;
+    renderSummaryChart(data);
+
+    // Re-render on resize
+    window.addEventListener('resize', () => {
+      syncScrollbarWidth();
+      renderSummaryChart(summaryData);
+    });
+  })
+  .catch(err => console.error('Failed to load data.json:', err));

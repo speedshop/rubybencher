@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="css/report.css">
 </head>
 <body>
-  <div class="left-column">
+  <div class="intro-column">
     <h1>The Great Cross-Cloud Ruby Benchmark</h1>
     <p class="subtitle">Comparing iteration times across <%= instance_names.size %> machine types on several public clouds.</p>
     <p>This site was borne of my continuous frustration at <a href="https://speedshop.co">Speedshop</a> of clients running on old generation AWS instances, when I knew "free speed" was on the table if they just upgraded to a newer generation. However, I could never quantify the speed boost. This page simply runs <a href="https://github.com/ruby/ruby-bench">ruby-bench</a>, a series of <i>mostly</i> CPU-bound benchmarks maintained by Ruby core and the YJIT developers. We run across multiple instances to reduce the effect of noisy neighbors.</p>
@@ -47,6 +47,7 @@
   </div>
 
   <div id="summary-chart"></div>
+  <div id="tooltip"></div>
 
   <div class="main-layout">
     <div class="left-column">

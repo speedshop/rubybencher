@@ -35,19 +35,25 @@ p.subtitle { color: #666; }
   align-items: flex-start;
   max-width: 100%;
 }
-.left-column {
+.intro-column {
   width: 570px;
+  max-width: 100%;
+  margin-bottom: 16px;
+}
+.intro-column p {
+  margin-bottom: 8px;
+}
+.left-column {
+  width: 100%;
   max-width: 100%;
   flex-shrink: 0;
   margin-bottom: 16px;
-}
-.left-column p {
-  margin-bottom: 8px;
 }
 @media (max-width: 999px) {
   .main-layout {
     flex-direction: column;
   }
+  .intro-column,
   .left-column {
     width: 100%;
   }
@@ -313,6 +319,29 @@ th.sub-header {
 .axis-label {
   font-size: 9px;
   fill: #999;
+}
+.summary-line {
+  cursor: pointer;
+  transition: opacity 100ms ease-out;
+}
+
+/* Tooltip */
+#tooltip {
+  display: none;
+  position: fixed;
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 1000;
+  max-width: 300px;
+  line-height: 1.4;
+}
+#tooltip em {
+  color: #aaa;
+  font-style: normal;
 }
 
 @media (max-width: 999px) {
