@@ -19,7 +19,8 @@ class RunsController < ApplicationController
 
     @run = Run.new(
       ruby_version: params[:ruby_version],
-      runs_per_instance_type: params[:runs_per_instance_type]
+      runs_per_instance_type: params[:runs_per_instance_type],
+      external_id: params[:run_id]
     )
 
     if @run.save

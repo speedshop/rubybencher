@@ -119,6 +119,13 @@ function generate_api_key
     end
 end
 
+function generate_run_id
+    # Generate a run ID matching the server format: timestamp + 8 random digits
+    set -l timestamp (date +%s)
+    set -l random_digits (printf "%08d" (math (random) % 100000000))
+    echo "$timestamp$random_digits"
+end
+
 function validate_config
     if test -z "$CONFIG_FILE"
         log_error "Config file is required (-c/--config)"
@@ -700,15 +707,18 @@ function create_run
 
     set -l config_json (filter_config_for_provider)
 
+    # Add the pre-generated run_id to the config
+    set -l config_with_run_id (echo $config_json | jq --arg run_id "$RUN_ID" '. + {run_id: $run_id}')
+
     if test "$DEBUG" = true
         echo "Config being sent:"
-        echo $config_json | jq .
+        echo $config_with_run_id | jq .
     end
 
     set -l response (curl -s -X POST "$ORCHESTRATOR_URL/runs" \
         -H "Authorization: Bearer $API_KEY" \
         -H "Content-Type: application/json" \
-        -d "$config_json")
+        -d "$config_with_run_id")
 
     if test "$DEBUG" = true
         echo "Response:"
@@ -716,11 +726,11 @@ function create_run
     end
 
     # Parse response
-    set -g RUN_ID (echo $response | jq -r '.run_id // empty')
+    set -l response_run_id (echo $response | jq -r '.run_id // empty')
     set -l tasks_created (echo $response | jq -r '.tasks_created // 0')
     set -l error_msg (echo $response | jq -r '.error // empty')
 
-    if test -z "$RUN_ID"
+    if test -z "$response_run_id"
         log_error "Failed to create run: $error_msg"
         exit 1
     end
@@ -901,17 +911,44 @@ function main
     # Get orchestrator configuration
     get_orchestrator_config
 
+    # Generate run ID early so we can start AWS terraform in parallel
+    set -g RUN_ID (generate_run_id)
+    log_info "Generated run ID: $RUN_ID"
+
+    # Check if AWS provider is configured (for parallelization)
+    set -l has_aws_instances (cat "$CONFIG_FILE" | jq -r '.aws // empty')
+    set -l aws_terraform_pid ""
+
+    # Start AWS terraform in background if AWS is configured and not using local orchestrator
+    if test -n "$has_aws_instances"; and test "$has_aws_instances" != "null"; and test "$LOCAL_ORCHESTRATOR" != true; and test "$SKIP_INFRA" != true
+        log_info "Starting AWS task runner setup in parallel with orchestrator wait..."
+        setup_aws_task_runners &
+        set aws_terraform_pid $last_pid
+    end
+
     # Wait for orchestrator to be ready
     wait_for_orchestrator
 
-    # Create the benchmark run
+    # Create the benchmark run (uses pre-generated RUN_ID)
     create_run
 
     # Start task runners for local provider (if configured)
     start_local_task_runners
 
-    # Start task runners for AWS provider (if configured)
-    setup_aws_task_runners
+    # Wait for AWS terraform to complete if it was started in background
+    if test -n "$aws_terraform_pid"
+        log_info "Waiting for AWS task runner setup to complete..."
+        wait $aws_terraform_pid
+        set -l aws_status $status
+        if test $aws_status -ne 0
+            log_error "AWS task runner setup failed"
+            exit 1
+        end
+        log_success "AWS task runner setup completed"
+    else if test -n "$has_aws_instances"; and test "$has_aws_instances" != "null"; and test "$LOCAL_ORCHESTRATOR" = true
+        # AWS was skipped due to local orchestrator - show the error message
+        setup_aws_task_runners
+    end
 
     # Monitor progress
     poll_run_status

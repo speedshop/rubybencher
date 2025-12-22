@@ -48,6 +48,28 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unauthorized
   end
 
+  test "POST /runs accepts client-provided run_id" do
+    client_run_id = "173500000012345678"
+
+    post runs_path,
+      params: {
+        ruby_version: "3.4.7",
+        runs_per_instance_type: 1,
+        run_id: client_run_id,
+        aws: ["c8g.medium"]
+      },
+      headers: { 'Authorization' => "Bearer #{@api_key}" },
+      as: :json
+
+    assert_response :created
+    json = JSON.parse(response.body)
+
+    assert_equal client_run_id, json['run_id']
+
+    run = Run.find_by(external_id: client_run_id)
+    assert run.present?
+  end
+
   test "GET /runs/:id returns run status" do
     run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
     run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1, status: "completed")
