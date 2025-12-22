@@ -1,0 +1,28 @@
+function check_dependencies
+    log_info "Checking dependencies..."
+
+    set -l missing_deps
+
+    for dep in jq curl gum
+        if not command -q $dep
+            set missing_deps $missing_deps $dep
+        end
+    end
+
+    if test "$LOCAL_ORCHESTRATOR" = true
+        if not command -q docker
+            set missing_deps $missing_deps docker
+        end
+    else if not test "$SKIP_INFRA" = true
+        if not command -q terraform
+            set missing_deps $missing_deps terraform
+        end
+    end
+
+    if test (count $missing_deps) -gt 0
+        log_error "Missing dependencies: $missing_deps"
+        exit 1
+    end
+
+    log_success "All dependencies found"
+end
