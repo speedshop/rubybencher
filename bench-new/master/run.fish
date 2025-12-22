@@ -17,6 +17,14 @@ set -g API_KEY ""
 set -g MOCK_BENCHMARK false
 set -g NON_INTERACTIVE false
 
+# Track which options were set via CLI (to override config)
+set -g CLI_LOCAL_ORCHESTRATOR false
+set -g CLI_SKIP_INFRA false
+set -g CLI_DEBUG false
+set -g CLI_API_KEY false
+set -g CLI_MOCK_BENCHMARK false
+set -g CLI_NON_INTERACTIVE false
+
 function print_usage
     echo "Usage: run.fish [OPTIONS]"
     echo ""
@@ -71,19 +79,25 @@ function parse_args
             case -k --api-key
                 set i (math $i + 1)
                 set -g API_KEY $argv[$i]
+                set -g CLI_API_KEY true
             case -p --provider
                 set i (math $i + 1)
                 set -g PROVIDER_FILTER $argv[$i]
             case --local-orchestrator
                 set -g LOCAL_ORCHESTRATOR true
+                set -g CLI_LOCAL_ORCHESTRATOR true
             case --skip-infra
                 set -g SKIP_INFRA true
+                set -g CLI_SKIP_INFRA true
             case --mock
                 set -g MOCK_BENCHMARK true
+                set -g CLI_MOCK_BENCHMARK true
             case --debug
                 set -g DEBUG true
+                set -g CLI_DEBUG true
             case --non-interactive
                 set -g NON_INTERACTIVE true
+                set -g CLI_NON_INTERACTIVE true
             case -h --help
                 print_usage
                 exit 0
@@ -139,6 +153,52 @@ function validate_config
     if test -z "$runs_per"
         log_error "Config file missing required field: runs_per_instance_type"
         exit 1
+    end
+end
+
+function load_config_options
+    # Load options from config file, but CLI options take precedence
+
+    if test "$CLI_LOCAL_ORCHESTRATOR" = false
+        set -l config_val (cat "$CONFIG_FILE" | jq -r '.local_orchestrator // false')
+        if test "$config_val" = "true"
+            set -g LOCAL_ORCHESTRATOR true
+        end
+    end
+
+    if test "$CLI_SKIP_INFRA" = false
+        set -l config_val (cat "$CONFIG_FILE" | jq -r '.skip_infra // false')
+        if test "$config_val" = "true"
+            set -g SKIP_INFRA true
+        end
+    end
+
+    if test "$CLI_MOCK_BENCHMARK" = false
+        set -l config_val (cat "$CONFIG_FILE" | jq -r '.mock // false')
+        if test "$config_val" = "true"
+            set -g MOCK_BENCHMARK true
+        end
+    end
+
+    if test "$CLI_DEBUG" = false
+        set -l config_val (cat "$CONFIG_FILE" | jq -r '.debug // false')
+        if test "$config_val" = "true"
+            set -g DEBUG true
+        end
+    end
+
+    if test "$CLI_NON_INTERACTIVE" = false
+        set -l config_val (cat "$CONFIG_FILE" | jq -r '.non_interactive // false')
+        if test "$config_val" = "true"
+            set -g NON_INTERACTIVE true
+        end
+    end
+
+    if test "$CLI_API_KEY" = false
+        set -l config_val (cat "$CONFIG_FILE" | jq -r '.api_key // empty')
+        if test -n "$config_val"; and test "$config_val" != "null"
+            set -g API_KEY "$config_val"
+        end
     end
 end
 
@@ -505,22 +565,31 @@ function setup_aws_task_runners
     # Build instance types JSON
     set -l instance_types_json (cat "$CONFIG_FILE" | jq -c '.aws')
 
-    # Build vcpu_count map
+    # Get the minimum number of task runners per instance type
+    set -l min_runners (get_task_runner_count "aws")
+
+    # Build vcpu_count map and instance_count map
+    # instance_count = ceil(min_runners / vcpu_count)
     set -l vcpu_map "{"
+    set -l instance_count_map "{"
     set -l first true
     for i in (seq 0 (math (cat "$CONFIG_FILE" | jq '.aws | length') - 1))
         set -l alias_name (cat "$CONFIG_FILE" | jq -r ".aws[$i].alias")
         set -l instance_type (cat "$CONFIG_FILE" | jq -r ".aws[$i].instance_type")
         set -l vcpu (get_vcpu_count $instance_type)
+        set -l instances_needed (math "ceil($min_runners / $vcpu)")
 
         if test "$first" = true
             set first false
         else
             set vcpu_map "$vcpu_map,"
+            set instance_count_map "$instance_count_map,"
         end
         set vcpu_map "$vcpu_map\"$alias_name\":$vcpu"
+        set instance_count_map "$instance_count_map\"$alias_name\":$instances_needed"
     end
     set vcpu_map "$vcpu_map}"
+    set instance_count_map "$instance_count_map}"
 
     # Prepare mock and debug flags
     set -l mock_flag "false"
@@ -546,6 +615,7 @@ run_id          = \"$RUN_ID\"
 ruby_version    = \"$ruby_version\"
 instance_types  = $instance_types_json
 vcpu_count      = $vcpu_map
+instance_count  = $instance_count_map
 mock_benchmark  = $mock_flag
 debug_mode      = $debug_flag" > "$tf_dir/terraform.tfvars"
 
@@ -589,8 +659,8 @@ function get_task_runner_count
     # Defaults to 1 if not specified
     set -l provider $argv[1]
 
-    # First check for provider-specific count
-    set -l provider_count (cat "$CONFIG_FILE" | jq -r ".task_runners.count.$provider // empty")
+    # First check for provider-specific count (only if count is an object)
+    set -l provider_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .task_runners.count | type == "object" then .task_runners.count[$p] // empty else empty end')
     if test -n "$provider_count"; and test "$provider_count" != "null"
         echo $provider_count
         return
@@ -805,22 +875,15 @@ function main
         "Ruby Cross Cloud Benchmark" \
         "Master Script"
 
-    # Validate inputs
+    # Validate inputs and load config options
     validate_config
+    load_config_options
     check_dependencies
 
     # Show config summary
     echo ""
-    log_info "Configuration:"
-    echo "  Config file: $CONFIG_FILE"
-    echo "  Ruby version: "(cat "$CONFIG_FILE" | jq -r '.ruby_version')
-    echo "  Runs per instance: "(cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
-    if test -n "$PROVIDER_FILTER"
-        echo "  Provider filter: $PROVIDER_FILTER"
-    end
-    if test "$LOCAL_ORCHESTRATOR" = true
-        echo "  Mode: Local orchestrator (docker compose)"
-    end
+    log_info "Configuration ($CONFIG_FILE):"
+    jq . "$CONFIG_FILE"
     echo ""
 
     # Set up signal handler

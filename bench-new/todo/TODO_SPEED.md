@@ -31,16 +31,17 @@ The biggest time sink is user-data scripts installing Ruby, Docker, and dependen
 - User data just starts the task runner script with parameters
 - Same approach for orchestrator AMI
 
-### 3. Allow parallel runs per instance type (opt-in) with CPU pinning
+### 3. Run multiple workers per instance with CPU pinning
 
-Right now the orchestrator only allows one active task per `provider + instance_type`. Even if you start multiple containers on a multi‑vCPU box, extra workers get `wait` until the current task finishes. If accuracy tradeoffs are acceptable, allow `N` concurrent tasks per instance type and pin each container to a dedicated vCPU (`--cpuset-cpus`) so runs don't fight as much.
+The orchestrator already supports multiple concurrent tasks per `provider + instance_type` - each worker can claim and run tasks in parallel. However, we currently deploy one worker per EC2 instance. On multi-vCPU boxes, we could run multiple worker containers per instance to better utilize hardware.
 
 **Implementation:**
-- Add config like `task_runners.max_parallel_per_type` (default 1)
-- In `TasksController#claim`, allow assignment if `in_progress < max`
-- In user-data, set `--cpuset-cpus` based on container index
+- Add config like `task_runners.workers_per_instance` (default 1)
+- In user-data, start N worker containers instead of 1
+- Pin each container to a dedicated vCPU (`--cpuset-cpus=N`) so runs don't contend for CPU
+- Trade-off: memory contention and cache effects may reduce benchmark accuracy
 
-**Savings:** Reduces wall time roughly by the parallelism factor for `runs_per_instance_type > 1`.
+**Savings:** Reduces wall time roughly by the parallelism factor, but may affect benchmark consistency.
 
 ### 3. Persistent base infrastructure
 

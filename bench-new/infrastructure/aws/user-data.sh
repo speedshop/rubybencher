@@ -75,16 +75,18 @@ if [ "$DEBUG_MODE" = "true" ]; then
     CONTAINER_ARGS="$CONTAINER_ARGS --debug --no-exit"
 fi
 
-# Start task runner containers (one per vCPU)
-echo "Starting $VCPU_COUNT task runner container(s)..."
+# Start task runner containers (one per vCPU, pinned to specific CPU)
+echo "Starting $VCPU_COUNT task runner container(s) with CPU pinning..."
 
 for i in $(seq 1 $VCPU_COUNT); do
     CONTAINER_NAME="task-runner-$RUN_ID-$i"
-    echo "Starting container $i/$VCPU_COUNT: $CONTAINER_NAME"
+    # CPU index is 0-based, container index is 1-based
+    CPU_INDEX=$((i - 1))
+    echo "Starting container $i/$VCPU_COUNT: $CONTAINER_NAME (pinned to CPU $CPU_INDEX)"
 
     docker run -d \
         --name "$CONTAINER_NAME" \
-        --cpus=1 \
+        --cpuset-cpus="$CPU_INDEX" \
         --restart=no \
         task-runner:$RUBY_VERSION \
         $CONTAINER_ARGS

@@ -103,13 +103,29 @@ locals {
     for config in local.instance_configs :
     config.alias => can(regex("^[a-z]+[0-9]+g", config.instance_type)) ? "arm64" : "x86_64"
   }
+
+  # Flatten instance configs to create multiple instances per alias
+  # e.g., c6g with instance_count=3 becomes c6g-1, c6g-2, c6g-3
+  flattened_instances = flatten([
+    for config in local.instance_configs : [
+      for i in range(var.instance_count[config.alias]) : {
+        key           = "${config.alias}-${i + 1}"
+        alias         = config.alias
+        instance_type = config.instance_type
+        index         = i + 1
+      }
+    ]
+  ])
+
+  # Convert to map for for_each
+  instance_map = { for inst in local.flattened_instances : inst.key => inst }
 }
 
 # Create EC2 instances for each instance type
 resource "aws_instance" "task_runner" {
-  for_each = { for config in local.instance_configs : config.alias => config }
+  for_each = local.instance_map
 
-  ami           = local.instance_arch[each.key] == "arm64" ? data.aws_ami.amazon_linux_arm64.id : data.aws_ami.amazon_linux_x86_64.id
+  ami           = local.instance_arch[each.value.alias] == "arm64" ? data.aws_ami.amazon_linux_arm64.id : data.aws_ami.amazon_linux_x86_64.id
   instance_type = each.value.instance_type
   key_name      = var.key_name
   subnet_id     = local.subnet_id
@@ -130,14 +146,14 @@ resource "aws_instance" "task_runner" {
     ruby_version     = var.ruby_version
     mock_benchmark   = var.mock_benchmark
     debug_mode       = var.debug_mode
-    vcpu_count       = var.vcpu_count[each.key]
+    vcpu_count       = var.vcpu_count[each.value.alias]
   }))
 
   tags = {
     Name         = "railsbencher-task-runner-${each.key}-${var.run_id}"
     RunId        = var.run_id
     InstanceType = each.value.instance_type
-    Alias        = each.key
+    Alias        = each.value.alias
   }
 
   # Longer timeout for ARM instances which can take longer to provision

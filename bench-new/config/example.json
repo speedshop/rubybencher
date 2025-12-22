@@ -13,6 +13,24 @@
   },
   "_task_runners_comment": "OPTIONAL section. If omitted, defaults to 1 task runner per instance type.",
 
+  "local_orchestrator": false,
+  "_local_orchestrator_comment": "OPTIONAL. Run orchestrator locally via docker compose instead of terraform. Default: false",
+
+  "skip_infra": false,
+  "_skip_infra_comment": "OPTIONAL. Skip terraform, use existing infrastructure. Requires BENCHMARK_ORCHESTRATOR_URL env var. Default: false",
+
+  "mock": false,
+  "_mock_comment": "OPTIONAL. Run mock benchmark instead of real benchmark (for testing). Default: false",
+
+  "debug": false,
+  "_debug_comment": "OPTIONAL. Enable debug mode (verbose output, keeps task runners alive). Default: false",
+
+  "non_interactive": false,
+  "_non_interactive_comment": "OPTIONAL. Skip all interactive prompts (for CI/automation). Default: false",
+
+  "api_key": null,
+  "_api_key_comment": "OPTIONAL. API key for orchestrator authentication. Generated randomly if not provided.",
+
   "local": [
     {
       "instance_type": "docker",
