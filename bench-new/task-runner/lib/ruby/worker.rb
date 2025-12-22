@@ -96,6 +96,7 @@ module TaskRunner
       run_number = task["run_number"]
       provider = task["provider"]
       instance_type = task["instance_type"]
+      instance_type_alias = task["instance_type_alias"]
 
       result_url = presigned_urls["result_upload_url"]
       error_url = presigned_urls["error_upload_url"]
@@ -134,6 +135,7 @@ module TaskRunner
             work_dir: work_dir,
             provider: provider,
             instance_type: instance_type,
+            instance_type_alias: instance_type_alias,
             ruby_version: ruby_version,
             run_number: run_number,
             start_time: start_time,
@@ -156,6 +158,7 @@ module TaskRunner
           task_id: task_id,
           provider: provider,
           instance_type: instance_type,
+          instance_type_alias: instance_type_alias,
           ruby_version: ruby_version,
           run_number: run_number,
           start_time: start_time,
@@ -170,6 +173,7 @@ module TaskRunner
             work_dir: work_dir,
             provider: provider,
             instance_type: instance_type,
+            instance_type_alias: instance_type_alias,
             ruby_version: ruby_version,
             run_number: run_number,
             start_time: start_time,
@@ -195,7 +199,7 @@ module TaskRunner
       true
     end
 
-    def handle_task_failure(task_id:, work_dir:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, error_type:, error_message:, error_url:, error_key:, heartbeat:)
+    def handle_task_failure(task_id:, work_dir:, provider:, instance_type:, instance_type_alias:, ruby_version:, run_number:, start_time:, end_time:, error_type:, error_message:, error_url:, error_key:, heartbeat:)
       @logger.error "Task #{task_id} failed: #{error_message}"
 
       heartbeat.update(status: "error", message: error_message)
@@ -205,6 +209,7 @@ module TaskRunner
         task_id: task_id,
         provider: provider,
         instance_type: instance_type,
+        instance_type_alias: instance_type_alias,
         ruby_version: ruby_version,
         run_number: run_number,
         start_time: start_time,

@@ -7,14 +7,23 @@ instances.forEach((inst, i) => {
   colors[inst] = colorPalette[i % colorPalette.length];
 });
 
-// Color scale for relative percentages (green = 0%, red = 300%+)
+// Calculate max relative percentage from actual data, rounded up to nearest 100%
+const relCells = document.querySelectorAll('.rel-cell[data-relative]');
+let maxRelative = 0;
+relCells.forEach(el => {
+  const rel = parseFloat(el.dataset.relative);
+  if (!isNaN(rel) && rel > maxRelative) maxRelative = rel;
+});
+const maxScale = Math.max(100, Math.ceil(maxRelative / 100) * 100);
+
+// Color scale for relative percentages (green = 0%, red = maxScale%)
 const colorScale = d3.scaleLinear()
-  .domain([0, 50, 150, 300])
+  .domain([0, maxScale / 6, maxScale / 2, maxScale])
   .range(['#22863a', '#6a9f3d', '#d9822b', '#cb2431'])
   .clamp(true);
 
 // Apply colors to relative percentages
-document.querySelectorAll('.rel-cell[data-relative]').forEach(el => {
+relCells.forEach(el => {
   const rel = parseFloat(el.dataset.relative);
   if (rel > 0) {
     el.style.color = colorScale(rel);
@@ -27,7 +36,13 @@ document.querySelectorAll('.rel-cell[data-relative]').forEach(el => {
 
 // Create gradient for legend bar
 const legendBar = document.getElementById('color-legend-bar');
-legendBar.style.background = `linear-gradient(to right, ${[0, 50, 150, 300].map(v => colorScale(v)).join(', ')})`;
+const legendStops = [0, maxScale / 6, maxScale / 2, maxScale];
+legendBar.style.background = `linear-gradient(to right, ${legendStops.map(v => colorScale(v)).join(', ')})`;
+
+// Update legend label
+const legendContainer = legendBar.parentElement;
+const maxLabel = legendContainer.querySelector('span:nth-child(3)');
+if (maxLabel) maxLabel.textContent = maxScale + '%+';
 
 // Instance filtering state
 let selectedInstances = new Set(instances);
@@ -76,10 +91,12 @@ function updateVisibility() {
     tr.style.display = selectedInstances.has(instance) ? '' : 'none';
   });
 
-  // Update summary chart lines visibility
+  // Update summary chart lines visibility (respecting both instance selection and filter)
   summaryLines.forEach(line => {
-    const inst = d3.select(line).datum().instance;
-    line.style.display = selectedInstances.has(inst) ? '' : 'none';
+    const d = d3.select(line).datum();
+    const matchesFilter = d.benchmark.toLowerCase().includes(currentFilter);
+    const matchesInstance = selectedInstances.has(d.instance);
+    line.style.display = (matchesFilter && matchesInstance) ? '' : 'none';
   });
 
   // Sync scrollbar width after column changes
@@ -146,11 +163,25 @@ document.getElementById('deselect-all').addEventListener('click', (e) => {
 // Table filter
 const filterInput = document.getElementById('filter');
 const tableRows = document.querySelectorAll('#results-table tbody tr');
-filterInput.addEventListener('input', function() {
-  const filter = this.value.toLowerCase();
+let currentFilter = '';
+
+function applyFilter(filter) {
+  currentFilter = filter.toLowerCase();
+  // Filter table rows
   tableRows.forEach(row => {
-    row.style.display = row.dataset.name.includes(filter) ? '' : 'none';
+    row.style.display = row.dataset.name.includes(currentFilter) ? '' : 'none';
   });
+  // Filter summary chart lines
+  summaryLines.forEach(line => {
+    const d = d3.select(line).datum();
+    const matchesFilter = d.benchmark.toLowerCase().includes(currentFilter);
+    const matchesInstance = selectedInstances.has(d.instance);
+    line.style.display = (matchesFilter && matchesInstance) ? '' : 'none';
+  });
+}
+
+filterInput.addEventListener('input', function() {
+  applyFilter(this.value);
 });
 
 // Check for benchmark URL parameter and apply filter
@@ -158,7 +189,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const benchmarkParam = urlParams.get('benchmark');
 if (benchmarkParam) {
   filterInput.value = benchmarkParam;
-  filterInput.dispatchEvent(new Event('input'));
+  applyFilter(benchmarkParam);
 }
 
 // Legend highlight (all summary lines for an instance)

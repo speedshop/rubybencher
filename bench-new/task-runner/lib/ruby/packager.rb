@@ -8,7 +8,7 @@ require "uri"
 module TaskRunner
   class Packager
     class << self
-      def package_result(work_dir:, task_id:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, runner_id:, log_file: nil)
+      def package_result(work_dir:, task_id:, provider:, instance_type:, instance_type_alias: nil, ruby_version:, run_number:, start_time:, end_time:, runner_id:, log_file: nil)
         result_dir = File.join(work_dir, "result")
         FileUtils.mkdir_p(result_dir)
 
@@ -22,6 +22,7 @@ module TaskRunner
           task_id: task_id,
           provider: provider,
           instance_type: instance_type,
+          instance_type_alias: instance_type_alias,
           ruby_version: ruby_version,
           run_number: run_number,
           start_time: start_time,
@@ -36,7 +37,7 @@ module TaskRunner
         tarball
       end
 
-      def package_error(work_dir:, task_id:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, error_message:, runner_id:, log_file: nil)
+      def package_error(work_dir:, task_id:, provider:, instance_type:, instance_type_alias: nil, ruby_version:, run_number:, start_time:, end_time:, error_message:, runner_id:, log_file: nil)
         error_dir = File.join(work_dir, "error")
         FileUtils.mkdir_p(error_dir)
 
@@ -52,6 +53,7 @@ module TaskRunner
           task_id: task_id,
           provider: provider,
           instance_type: instance_type,
+          instance_type_alias: instance_type_alias,
           ruby_version: ruby_version,
           run_number: run_number,
           start_time: start_time,
@@ -89,8 +91,8 @@ module TaskRunner
         FileUtils.cp(log_file, File.join(dest_dir, "full_run.log"))
       end
 
-      def create_metadata(task_id:, provider:, instance_type:, ruby_version:, run_number:, start_time:, end_time:, status:, runner_id:)
-        {
+      def create_metadata(task_id:, provider:, instance_type:, instance_type_alias:, ruby_version:, run_number:, start_time:, end_time:, status:, runner_id:)
+        metadata = {
           task_id: task_id,
           provider: provider,
           instance_type: instance_type,
@@ -101,6 +103,8 @@ module TaskRunner
           status: status,
           runner_id: runner_id
         }
+        metadata[:alias] = instance_type_alias if instance_type_alias
+        metadata
       end
 
       def upload_local(file_path, dest_path, logger)

@@ -91,6 +91,23 @@ th {
   position: sticky;
   top: 0;
   background: white;
+  z-index: 2;
+}
+
+/* Sticky first column for desktop table */
+#results-table td.benchmark-name,
+#results-table th:first-child {
+  position: sticky;
+  left: 0;
+  background: white;
+  z-index: 1;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+}
+#results-table th:first-child {
+  z-index: 3; /* Corner cell needs highest z-index */
+}
+#results-table tr.all-row td.benchmark-name {
+  background: #f0f4f8;
 }
 .time-cell {
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
@@ -210,6 +227,20 @@ th.sub-header {
   text-align: left;
   white-space: nowrap;
   font-size: 9px;
+  z-index: 2;
+}
+
+/* Sticky first column for mobile table */
+#results-table-mobile td.instance-name,
+#results-table-mobile th:first-child {
+  position: sticky;
+  left: 0;
+  background: white;
+  z-index: 1;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+}
+#results-table-mobile th:first-child {
+  z-index: 3; /* Corner cell needs highest z-index */
 }
 #results-table-mobile td {
   padding: 3px 6px;
@@ -223,16 +254,18 @@ th.sub-header {
 .mobile-time-cell {
   text-align: right;
   vertical-align: middle;
+  white-space: nowrap;
 }
 .mobile-time {
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
   font-size: 9px;
-  display: block;
+  display: inline;
 }
 .mobile-rel {
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
   font-size: 7px;
-  display: block;
+  display: inline;
+  margin-left: 4px;
 }
 
 /* Instance legend */

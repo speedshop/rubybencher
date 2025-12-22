@@ -26,7 +26,8 @@ def base_instance_name(name, metadata = {})
 end
 
 def display_instance_name(base_name, metadata = {})
-  label = base_name.to_s.gsub(/[_.]/, '-')
+  # Use alias if available, otherwise fall back to base_name
+  label = metadata[:alias] || base_name.to_s.gsub(/[_.]/, '-')
   provider = metadata[:provider]
   provider ? "#{provider}-#{label}" : label
 end

@@ -565,8 +565,8 @@ function setup_aws_task_runners
     # Build instance types JSON
     set -l instance_types_json (cat "$CONFIG_FILE" | jq -c '.aws')
 
-    # Get the minimum number of task runners per instance type
-    set -l min_runners (get_task_runner_count "aws")
+    # Get the number of runs per instance type - this determines how many task runner slots we need
+    set -l min_runners (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
 
     # Build vcpu_count map and instance_count map
     # instance_count = ceil(min_runners / vcpu_count)
