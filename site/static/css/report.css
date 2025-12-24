@@ -289,6 +289,29 @@ th.sub-header {
   font-weight: 600;
   color: #555;
 }
+.provider-checkbox {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  transition: background 0.1s;
+}
+.provider-checkbox:hover {
+  background: #e9ecef;
+}
+.provider-checkbox .checkbox-visual {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #999;
+  border-radius: 2px;
+  display: inline-block;
+  background: white;
+}
+.provider-checkbox.checked .checkbox-visual {
+  background: #999;
+  border-color: #999;
+}
 .provider-divider {
   color: #ccc;
   margin: 0 4px;
@@ -336,6 +359,7 @@ th.sub-header {
 /* Summary chart */
 #summary-chart {
   margin-bottom: 16px;
+  min-height: 62px;
 }
 #summary-chart svg {
   display: block;

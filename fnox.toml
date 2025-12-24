@@ -1,0 +1,17 @@
+[providers.op]
+type = "1password"
+vault = "Private"
+
+[secrets]
+AWS_ACCESS_KEY_ID = { provider = "op", value = "rubybencher/AWS Access Key ID" }
+AWS_SECRET_ACCESS_KEY = { provider = "op", value = "rubybencher/AWS Secret Access Key" }
+TF_VAR_aws_access_key_id = { provider = "op", value = "rubybencher/AWS Access Key ID" }
+TF_VAR_aws_secret_access_key = { provider = "op", value = "rubybencher/AWS Secret Access Key" }
+AWS_DEFAULT_REGION = { default = "us-east-1" }
+CLOUDFLARE_API_TOKEN = { provider = "op", value = "rubybencher/Cloudflare API Token" }
+CLOUDFLARE_ACCOUNT_ID = { provider = "op", value = "rubybencher/Cloudflare Account ID" }
+CLOUDFLARE_ZONE_ID = { provider = "op", value = "rubybencher/Cloudflare Zone ID" }
+ARM_SUBSCRIPTION_ID = { provider = "op", value = "rubybencher/Azure Subscription ID" }
+ARM_CLIENT_ID = { provider = "op", value = "rubybencher/Azure Client ID" }
+ARM_CLIENT_SECRET = { provider = "op", value = "rubybencher/Azure Client Secret" }
+ARM_TENANT_ID = { provider = "op", value = "rubybencher/Azure Tenant ID" }

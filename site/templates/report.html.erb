@@ -31,7 +31,10 @@
       grouped = instance_names.group_by { |name| name.split('-', 2).first }
     %>
     <% grouped.each_with_index do |(provider, instances), idx| %>
-    <span class="provider-group">
+    <span class="provider-group" data-provider="<%= provider %>">
+      <span class="provider-checkbox checked" data-provider="<%= provider %>">
+        <span class="checkbox-visual"></span>
+      </span>
       <span class="provider-name"><%= provider %>:</span>
       <% instances.each do |inst| %>
       <span class="instance-checkbox checked" data-instance="<%= inst %>">

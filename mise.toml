@@ -3,6 +3,7 @@ terraform = "1.9"
 ruby = "3.4"
 node = "22"
 "npm:wrangler" = "latest"
+fnox = "latest"
 
 [env]
-_.file = ".env"
+_.source = "fnox export"

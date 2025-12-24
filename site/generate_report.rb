@@ -112,11 +112,24 @@ def generate_html(data, run_id)
   all_benchmarks = data.values.flat_map { |d| d[:benchmarks].keys }.uniq.sort
   ruby_version = data.values.first[:ruby_version]
 
-  # Parse run_id (unix timestamp + 8 random digits) into formatted date
-  run_date = if run_id =~ /^(\d{10})\d{8}$/
-    Time.at($1.to_i).utc.strftime("%B %d, %Y at %H:%M UTC")
+  # Parse run_id(s) (unix timestamp + 8 random digits) into formatted date(s)
+  # run_id may contain multiple IDs joined with ' + '
+  run_date = run_id.split(' + ').map do |id|
+    if id =~ /^(\d{10})\d{8}$/
+      Time.at($1.to_i).utc.strftime("%B %d, %Y")
+    else
+      nil
+    end
+  end.compact
+
+  run_date = if run_date.empty?
+    run_id  # fallback to raw string if no valid timestamps
+  elsif run_date.size == 1
+    run_date.first
+  elsif run_date.size == 2
+    "#{run_date[0]} and #{run_date[1]}"
   else
-    run_id
+    "#{run_date[0..-2].join(', ')}, and #{run_date.last}"
   end
 
   # Sort instances by total benchmark time (fastest first)
@@ -295,8 +308,8 @@ end
 data = remap_instances(data, instance_metadata)
 
 puts "\nGenerating HTML report..."
-# Use combined run_ids for display
-combined_run_id = run_ids.join(' + ')
+# Use combined run_ids for display (extract basenames from paths)
+combined_run_id = run_ids.map { |id| File.basename(id.chomp('/')) }.join(' + ')
 html, iteration_data = generate_html(data, combined_run_id)
 File.write(OUTPUT_FILE, html)
 

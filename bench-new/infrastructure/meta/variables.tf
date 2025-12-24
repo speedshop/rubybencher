@@ -46,13 +46,13 @@ variable "s3_bucket_prefix" {
 }
 
 variable "aws_access_key_id" {
-  description = "AWS access key ID for S3 access. Set TF_VAR_aws_access_key_id or pass -var"
+  description = "AWS access key ID for S3 access"
   type        = string
   sensitive   = true
 }
 
 variable "aws_secret_access_key" {
-  description = "AWS secret access key for S3 access. Set TF_VAR_aws_secret_access_key or pass -var"
+  description = "AWS secret access key for S3 access"
   type        = string
   sensitive   = true
 }

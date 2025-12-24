@@ -50,6 +50,14 @@ let isFirstClick = true;
 
 // Get all checkbox elements
 const checkboxItems = document.querySelectorAll('.instance-checkbox');
+const providerCheckboxes = document.querySelectorAll('.provider-checkbox');
+
+// Build provider -> instances mapping
+const providerInstances = {};
+document.querySelectorAll('.provider-group').forEach(group => {
+  const provider = group.dataset.provider;
+  providerInstances[provider] = Array.from(group.querySelectorAll('.instance-checkbox')).map(cb => cb.dataset.instance);
+});
 
 // Summary chart data and elements (populated after fetch)
 let summaryData = null;
@@ -116,6 +124,21 @@ function syncCheckboxes() {
       visual.style.backgroundColor = 'white';
     }
   });
+  syncProviderCheckboxes();
+}
+
+// Sync provider checkboxes based on their instance states
+function syncProviderCheckboxes() {
+  providerCheckboxes.forEach(cb => {
+    const provider = cb.dataset.provider;
+    const providerInsts = providerInstances[provider] || [];
+    const allChecked = providerInsts.length > 0 && providerInsts.every(inst => selectedInstances.has(inst));
+    if (allChecked) {
+      cb.classList.add('checked');
+    } else {
+      cb.classList.remove('checked');
+    }
+  });
 }
 
 function handleInstanceClick(instance) {
@@ -141,6 +164,27 @@ function handleInstanceClick(instance) {
 checkboxItems.forEach(item => {
   const instance = item.dataset.instance;
   item.addEventListener('click', () => handleInstanceClick(instance));
+});
+
+// Handle provider checkbox clicks
+providerCheckboxes.forEach(cb => {
+  cb.addEventListener('click', () => {
+    const provider = cb.dataset.provider;
+    const providerInsts = providerInstances[provider] || [];
+    const allChecked = providerInsts.every(inst => selectedInstances.has(inst));
+
+    if (allChecked) {
+      // Deselect all instances from this provider
+      providerInsts.forEach(inst => selectedInstances.delete(inst));
+    } else {
+      // Select all instances from this provider
+      providerInsts.forEach(inst => selectedInstances.add(inst));
+    }
+
+    isFirstClick = false;
+    syncCheckboxes();
+    updateVisibility();
+  });
 });
 
 // Select all / deselect all
