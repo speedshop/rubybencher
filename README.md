@@ -120,6 +120,15 @@ ruby site/generate_report.rb
 
 This creates `site/public/index.html` with your results.
 
+## Resume Behavior (status.json)
+
+The master script writes `status.json` at the repo root and uses it to resume runs:
+
+- If `status.json` exists and the orchestrator is reachable, meta Terraform is skipped.
+- If the previous run is still `running`, the master resumes it instead of creating a new run.
+- AWS/Azure task runners are only re-applied when Terraform state is missing or the stored run ID does not match.
+- `status.json` is ignored by git and removed by `bench-new/nuke/nuke.fish`.
+
 ## Configuration
 
 The config file controls what gets benchmarked:

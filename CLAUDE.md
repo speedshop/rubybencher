@@ -21,6 +21,15 @@ Distributed benchmarking system that runs Ruby benchmarks across arbitrary publi
 
 Key flags: `-c CONFIG` (required), `--local-orchestrator`, `--skip-infra`, `--mock`, `--debug`
 
+## Resume Behavior (status.json)
+
+The master script writes `status.json` at the repo root and uses it to resume runs:
+
+- If `status.json` exists and the orchestrator is reachable, meta Terraform is skipped.
+- If the previous run is still `running`, the master resumes it instead of creating a new run.
+- AWS/Azure task runners are only re-applied when Terraform state is missing or the stored run ID does not match.
+- `status.json` is ignored by git and removed by `bench-new/nuke/nuke.fish`.
+
 ## Development
 
 ```fish
