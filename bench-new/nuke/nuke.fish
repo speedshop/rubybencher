@@ -34,6 +34,7 @@ function confirm_destruction
         "" \
         "This will destroy:" \
         "• All AWS infrastructure (EC2, VPC, S3)" \
+        "• All Azure infrastructure (VMs, VNet, NSG)" \
         "• Terraform state" \
         "• Local Docker containers" \
         "" \

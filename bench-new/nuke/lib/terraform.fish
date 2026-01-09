@@ -44,8 +44,11 @@ function destroy_terraform_dir
 end
 
 function destroy_terraform
-    # Destroy AWS task runner infrastructure first (depends on meta)
+    # Destroy cloud task runner infrastructure first (depends on meta)
     destroy_terraform_dir "$BENCH_DIR/infrastructure/aws" "AWS task runners"
+
+    # Destroy Azure task runner infrastructure
+    destroy_terraform_dir "$BENCH_DIR/infrastructure/azure" "Azure task runners"
 
     # Then destroy meta infrastructure
     destroy_terraform_dir "$BENCH_DIR/infrastructure/meta" "meta"

@@ -1,0 +1,13 @@
+{
+  "ruby_version": "3.4.7",
+  "runs_per_instance_type": 1,
+  "task_runners": {
+    "count": 1
+  },
+  "azure": [
+    {
+      "instance_type": "Standard_D2s_v5",
+      "alias": "d2s-v5"
+    }
+  ]
+}

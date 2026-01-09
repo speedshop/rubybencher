@@ -85,6 +85,31 @@ Then run:
 
 The tool creates all needed cloud resources. Results appear in the `results/` folder when done.
 
+### Example: Run on Azure
+
+Use the single-instance Azure config (2 vCPU):
+
+```fish
+./bench-new/master/run.fish -c bench-new/config/azure-single.json
+```
+
+Azure auth uses environment variables for the Terraform provider:
+
+```
+ARM_SUBSCRIPTION_ID
+ARM_TENANT_ID
+ARM_CLIENT_ID
+ARM_CLIENT_SECRET
+```
+
+Optional overrides:
+
+```
+AZURE_REGION           # default: eastus
+AZURE_ADMIN_USERNAME   # default: azureuser
+AZURE_ALLOWED_SSH_CIDR # default: 0.0.0.0/0
+```
+
 ### Generate the Report
 
 After a benchmark run completes:
@@ -106,7 +131,7 @@ The config file controls what gets benchmarked:
 | `aws` | Array of AWS instance objects |
 | `azure` | Array of Azure instance objects |
 | `local` | Array of local Docker instance objects |
-| `task_runners.count` | Number of parallel task runners per instance type (default: 1) |
+| `task_runners.count` | Max task runners per instance (local defaults to 1; cloud defaults to vCPU count) |
 
 Each instance object has:
 - `instance_type`: The cloud provider's instance type name (or "docker" for local)
