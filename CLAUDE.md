@@ -49,6 +49,32 @@ ruby site/generate_report.rb
 - `mise.toml`: Tool versions (Ruby 3.4, Terraform 1.9)
 - `bench-new/config/*.json`: Benchmark configurations
 
+## Secrets (fnox + 1Password)
+
+Secrets are managed with `fnox` and loaded via `mise`:
+
+- 1Password item: `rubybencher` in the `Private` vault (see `fnox.toml`)
+- `mise.toml` loads env with `fnox export` (export prefix stripped)
+- `fnox list` shows keys + sources, not values (by design)
+
+Usage:
+
+```fish
+# Ensure 1Password CLI is logged in
+op vault list
+
+# Inspect configured keys (no values)
+mise exec -- fnox list
+
+# Verify a secret can be fetched (prints the value)
+mise exec -- fnox get ARM_SUBSCRIPTION_ID
+
+# Run with secrets loaded
+mise exec -- ./bench-new/master/run.fish -c bench-new/config/azure-single.json
+```
+
+When adding new secrets, update the `rubybencher` 1Password item first, then reference it in `fnox.toml`. Never commit raw secrets.
+
 ## Testing
 
 - Orchestrator: `cd bench-new/orchestrator && bin/rails test`
