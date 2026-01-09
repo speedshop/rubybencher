@@ -31,11 +31,12 @@ function get_vcpu_count
     end
 end
 
-function setup_aws_task_runners
-    # Check if aws provider is in the config
+function prepare_aws_task_runners
+    # Prepare AWS task runners: validation, config building, terraform init
+    # Returns 0 if ready to proceed, 1 if nothing to do
     set -l aws_instances (cat "$CONFIG_FILE" | jq -r '.aws // empty')
     if test -z "$aws_instances"; or test "$aws_instances" = "null"
-        return 0
+        return 1
     end
 
     if test "$LOCAL_ORCHESTRATOR" = true
@@ -44,13 +45,13 @@ function setup_aws_task_runners
         exit 1
     end
 
-    log_info "Setting up AWS task runner infrastructure..."
+    log_info "Preparing AWS task runner infrastructure..."
 
-    set -l tf_dir "$BENCH_DIR/infrastructure/aws"
+    set -g AWS_TF_DIR "$BENCH_DIR/infrastructure/aws"
     set -l meta_tf_dir "$BENCH_DIR/infrastructure/meta"
 
-    if not test -d "$tf_dir"
-        log_error "AWS infrastructure directory not found: $tf_dir"
+    if not test -d "$AWS_TF_DIR"
+        log_error "AWS infrastructure directory not found: $AWS_TF_DIR"
         exit 1
     end
 
@@ -75,8 +76,10 @@ function setup_aws_task_runners
     # Get the number of runs per instance type - this determines how many task runner slots we need
     set -l min_runners (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
 
+    # Optional cap for task runners per instance
+    set -l runner_cap (get_task_runner_cap "aws")
+
     # Build vcpu_count map and instance_count map
-    # instance_count = ceil(min_runners / vcpu_count)
     set -l vcpu_map "{"
     set -l instance_count_map "{"
     set -l first true
@@ -84,7 +87,19 @@ function setup_aws_task_runners
         set -l alias_name (cat "$CONFIG_FILE" | jq -r ".aws[$i].alias")
         set -l instance_type (cat "$CONFIG_FILE" | jq -r ".aws[$i].instance_type")
         set -l vcpu (get_vcpu_count $instance_type)
-        set -l instances_needed (math "ceil($min_runners / $vcpu)")
+        set -l effective_vcpu $vcpu
+
+        if test -n "$runner_cap"; and test "$runner_cap" != "null"
+            if test $runner_cap -lt $effective_vcpu
+                set effective_vcpu $runner_cap
+            end
+        end
+
+        if test $effective_vcpu -lt 1
+            set effective_vcpu 1
+        end
+
+        set -l instances_needed (math "ceil($min_runners / $effective_vcpu)")
 
         if test "$first" = true
             set first false
@@ -92,7 +107,7 @@ function setup_aws_task_runners
             set vcpu_map "$vcpu_map,"
             set instance_count_map "$instance_count_map,"
         end
-        set vcpu_map "$vcpu_map\"$alias_name\":$vcpu"
+        set vcpu_map "$vcpu_map\"$alias_name\":$effective_vcpu"
         set instance_count_map "$instance_count_map\"$alias_name\":$instances_needed"
     end
     set vcpu_map "$vcpu_map}"
@@ -110,9 +125,9 @@ function setup_aws_task_runners
     end
 
     # Initialize terraform if needed
-    if not test -d "$tf_dir/.terraform"
+    if not test -d "$AWS_TF_DIR/.terraform"
         gum spin --spinner dot --title "Initializing AWS task runner Terraform..." -- \
-            terraform -chdir="$tf_dir" init
+            terraform -chdir="$AWS_TF_DIR" init
     end
 
     # Create tfvars file for this run
@@ -124,24 +139,27 @@ instance_types  = $instance_types_json
 vcpu_count      = $vcpu_map
 instance_count  = $instance_count_map
 mock_benchmark  = $mock_flag
-debug_mode      = $debug_flag" > "$tf_dir/terraform.tfvars"
+debug_mode      = $debug_flag" > "$AWS_TF_DIR/terraform.tfvars"
 
     if test "$DEBUG" = true
         echo "AWS terraform.tfvars:"
-        cat "$tf_dir/terraform.tfvars"
+        cat "$AWS_TF_DIR/terraform.tfvars"
     end
 
-    # Apply infrastructure
-    log_info "Creating AWS task runner instances..."
-    terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
+    return 0
+end
 
-    if test $status -ne 0
-        log_error "Failed to create AWS task runner instances"
-        exit 1
-    end
+function get_aws_terraform_dir
+    # Return the AWS terraform directory (must call prepare_aws_task_runners first)
+    echo $AWS_TF_DIR
+end
+
+function finalize_aws_task_runners
+    # Show output after terraform completes
+    set -l meta_tf_dir "$BENCH_DIR/infrastructure/meta"
 
     # Show created instances
-    set -l instances (terraform -chdir="$tf_dir" output -json task_runner_instances 2>/dev/null)
+    set -l instances (terraform -chdir="$AWS_TF_DIR" output -json task_runner_instances 2>/dev/null)
     if test -n "$instances"
         log_success "AWS task runner instances created:"
         echo $instances | jq -r 'to_entries[] | "  \(.key): \(.value.instance_type) (\(.value.public_ip))"'
@@ -156,4 +174,21 @@ debug_mode      = $debug_flag" > "$tf_dir/terraform.tfvars"
 
     log_success "AWS task runners starting (via user-data scripts)..."
     log_info "Task runners will automatically connect to orchestrator and claim tasks"
+end
+
+function setup_aws_task_runners
+    # Legacy function for backwards compatibility (runs synchronously)
+    if not prepare_aws_task_runners
+        return 0
+    end
+
+    log_info "Creating AWS task runner instances..."
+    terraform -chdir="$AWS_TF_DIR" apply -auto-approve -parallelism=30
+
+    if test $status -ne 0
+        log_error "Failed to create AWS task runner instances"
+        exit 1
+    end
+
+    finalize_aws_task_runners
 end

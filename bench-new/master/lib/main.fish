@@ -26,31 +26,83 @@ function main
     # Set up signal handler
     trap cleanup_on_interrupt SIGINT SIGTERM
 
+    # Initialize tmux pane tracking
+    tmux_init_pane_tracking
+
     # Initialize API key (generate if needed for local/skip-infra modes)
     initialize_api_key
 
     # Start local orchestrator if requested (uses API_KEY)
     start_local_orchestrator
 
-    # Setup infrastructure (unless local-orchestrator or skip-infra)
+    # Setup infrastructure - spawns meta terraform in pane
     setup_infrastructure
+
+    # Generate run ID early so we can prepare provider terraform
+    set -g RUN_ID (generate_run_id)
+    log_info "Generated run ID: $RUN_ID"
+
+    # Determine providers and validate configuration
+    set -l providers (configured_providers)
+
+    if test (count $providers) -eq 0
+        log_error "No providers configured in $CONFIG_FILE"
+        exit 1
+    end
+
+    for provider in $providers
+        provider_validate $provider
+    end
+
+    # Split providers into pre-orchestrator and post-run phases
+    set -l pre_providers
+    set -l post_providers
+    for provider in $providers
+        switch (provider_phase $provider)
+            case pre_orchestrator
+                set pre_providers $pre_providers $provider
+            case post_run
+                set post_providers $post_providers $provider
+        end
+    end
+
+    # Wait for meta infrastructure terraform to complete (needed for provider config and orchestrator)
+    wait_for_meta_infrastructure
 
     # Get orchestrator configuration
     get_orchestrator_config
 
-    # Generate run ID early so we can start AWS terraform in parallel
-    set -g RUN_ID (generate_run_id)
-    log_info "Generated run ID: $RUN_ID"
-
-    # Check if AWS provider is configured (for parallelization)
-    set -l has_aws_instances (cat "$CONFIG_FILE" | jq -r '.aws // empty')
-    set -l aws_terraform_pid ""
-
-    # Start AWS terraform in background if AWS is configured and not using local orchestrator
-    if test -n "$has_aws_instances"; and test "$has_aws_instances" != "null"; and test "$LOCAL_ORCHESTRATOR" != true; and test "$SKIP_INFRA" != true
-        log_info "Starting AWS task runner setup in parallel with orchestrator wait..."
-        setup_aws_task_runners &
-        set aws_terraform_pid $last_pid
+    # Prepare and spawn cloud provider terraforms in panes
+    # (Must happen after meta terraform completes since providers need its outputs)
+    set -l provider_pane_ids
+    set -l provider_names
+    if test "$SKIP_INFRA" = true
+        if test (count $pre_providers) -gt 0
+            log_warning "Skipping cloud task runner provisioning due to --skip-infra"
+        end
+    else
+        for provider in $pre_providers
+            switch $provider
+                case aws
+                    if prepare_aws_task_runners
+                        set -l tf_dir (get_aws_terraform_dir)
+                        set -l tf_cmd "terraform -chdir='$tf_dir' apply -auto-approve -parallelism=30"
+                        set -l pane_id (tmux_spawn_pane "AWS Task Runners" "$tf_cmd")
+                        set -a provider_pane_ids $pane_id
+                        set -a provider_names aws
+                        log_info "AWS terraform running in pane..."
+                    end
+                case azure
+                    if prepare_azure_task_runners
+                        set -l tf_dir (get_azure_terraform_dir)
+                        set -l tf_cmd "terraform -chdir='$tf_dir' apply -auto-approve -parallelism=30"
+                        set -l pane_id (tmux_spawn_pane "Azure Task Runners" "$tf_cmd")
+                        set -a provider_pane_ids $pane_id
+                        set -a provider_names azure
+                        log_info "Azure terraform running in pane..."
+                    end
+            end
+        end
     end
 
     # Wait for orchestrator to be ready
@@ -59,22 +111,30 @@ function main
     # Create the benchmark run (uses pre-generated RUN_ID)
     create_run
 
-    # Start task runners for local provider (if configured)
-    start_local_task_runners
+    # Start post-run providers (local)
+    for provider in $post_providers
+        provider_setup_task_runners $provider
+    end
 
-    # Wait for AWS terraform to complete if it was started in background
-    if test -n "$aws_terraform_pid"
-        log_info "Waiting for AWS task runner setup to complete..."
-        wait $aws_terraform_pid
-        set -l aws_status $status
-        if test $aws_status -ne 0
-            log_error "AWS task runner setup failed"
+    # Wait for cloud provider terraform panes to complete
+    for idx in (seq 1 (count $provider_pane_ids))
+        set -l pane_id $provider_pane_ids[$idx]
+        set -l provider $provider_names[$idx]
+        log_info "Waiting for $provider terraform to complete..."
+        tmux_wait_pane $pane_id
+        set -l tf_status $status
+        if test $tf_status -ne 0
+            log_error "$provider terraform failed"
             exit 1
         end
-        log_success "AWS task runner setup completed"
-    else if test -n "$has_aws_instances"; and test "$has_aws_instances" != "null"; and test "$LOCAL_ORCHESTRATOR" = true
-        # AWS was skipped due to local orchestrator - show the error message
-        setup_aws_task_runners
+        # Finalize provider (show outputs)
+        switch $provider
+            case aws
+                finalize_aws_task_runners
+            case azure
+                finalize_azure_task_runners
+        end
+        log_success "$provider task runner setup completed"
     end
 
     # Monitor progress
@@ -82,6 +142,9 @@ function main
 
     # Download results
     download_results
+
+    # Clean up tmux temp files
+    tmux_cleanup
 
     # Final summary
     echo ""

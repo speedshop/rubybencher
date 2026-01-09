@@ -15,9 +15,15 @@ source "$LIB_DIR/utils.fish"
 source "$LIB_DIR/dependencies.fish"
 source "$LIB_DIR/orchestrator.fish"
 source "$LIB_DIR/infrastructure.fish"
+source "$LIB_DIR/tmux.fish"
 source "$LIB_DIR/providers/aws.fish"
+source "$LIB_DIR/providers/azure.fish"
 source "$LIB_DIR/providers/local.fish"
+source "$LIB_DIR/providers/registry.fish"
 source "$LIB_DIR/run_flow.fish"
 source "$LIB_DIR/main.fish"
+
+# Ensure we're running inside tmux
+ensure_tmux_session $argv
 
 main $argv

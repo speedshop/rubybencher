@@ -9,7 +9,7 @@ function setup_infrastructure
         return 0
     end
 
-    log_info "Setting up AWS infrastructure..."
+    log_info "Setting up meta-infrastructure on AWS (orchestrator, bastion, S3, networking)..."
 
     set -l tf_dir "$BENCH_DIR/infrastructure/meta"
 
@@ -43,19 +43,32 @@ function setup_infrastructure
         exit 1
     end
 
-    # Initialize terraform if needed
+    # Initialize terraform if needed (do this in main pane before spawning)
     if not test -d "$tf_dir/.terraform"
-        gum spin --spinner dot --title "Initializing Terraform..." -- \
+        gum spin --spinner dot --title "Initializing meta Terraform..." -- \
             terraform -chdir="$tf_dir" init
     end
 
-    # Apply infrastructure
-    log_info "Applying infrastructure..."
-    terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
+    # Spawn terraform apply in a separate pane
+    set -l tf_cmd "terraform -chdir='$tf_dir' apply -auto-approve -parallelism=30"
+    set -g META_TF_PANE_ID (tmux_spawn_pane "Meta Infrastructure (Orchestrator)" "$tf_cmd")
+    log_info "Meta terraform running in pane..."
+end
 
-    if test $status -ne 0
-        log_error "Terraform apply failed"
+function wait_for_meta_infrastructure
+    # Wait for meta infrastructure terraform to complete
+    if test -z "$META_TF_PANE_ID"
+        return 0
+    end
+
+    log_info "Waiting for meta infrastructure terraform..."
+    tmux_wait_pane $META_TF_PANE_ID
+    set -l tf_status $status
+
+    if test $tf_status -ne 0
+        log_error "Meta infrastructure terraform failed"
         exit 1
     end
-    log_success "Infrastructure ready"
+
+    log_success "Meta infrastructure ready"
 end
