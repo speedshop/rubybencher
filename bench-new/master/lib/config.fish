@@ -176,6 +176,26 @@ function get_task_runner_count
     echo 1
 end
 
+function get_task_runner_cap
+    # Get the optional max task runner count for a provider.
+    # Returns empty if not specified in config.
+    set -l provider $argv[1]
+
+    # First check for provider-specific count (only if count is an object)
+    set -l provider_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .task_runners.count | type == "object" then .task_runners.count[$p] // empty else empty end')
+    if test -n "$provider_count"; and test "$provider_count" != "null"
+        echo $provider_count
+        return
+    end
+
+    # Then check for global count (if count is a number, not an object)
+    set -l global_count (cat "$CONFIG_FILE" | jq -r 'if .task_runners.count | type == "number" then .task_runners.count else empty end')
+    if test -n "$global_count"; and test "$global_count" != "null"
+        echo $global_count
+        return
+    end
+end
+
 function filter_config_for_provider
     set -l config_content (cat "$CONFIG_FILE")
 

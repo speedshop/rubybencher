@@ -9,7 +9,7 @@
 
   "task_runners": {
     "count": 3,
-    "_count_comment": "OPTIONAL. Number of task runners per instance type. Can be a number (global) or object with per-provider keys: { 'local': 3, 'aws': 2, 'azure': 1 }. Default: 1"
+    "_count_comment": "OPTIONAL. Max task runners per instance. Can be a number (global) or object with per-provider keys: { 'local': 3, 'aws': 2, 'azure': 1 }. Local defaults to 1; cloud defaults to vCPU count."
   },
   "_task_runners_comment": "OPTIONAL section. If omitted, defaults to 1 task runner per instance type.",
 

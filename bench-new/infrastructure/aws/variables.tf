@@ -28,7 +28,7 @@ variable "instance_types" {
 }
 
 variable "vcpu_count" {
-  description = "Map of instance alias to vCPU count (determines number of task runner containers per instance)"
+  description = "Map of instance alias to task runner count (containers per instance)"
   type        = map(number)
 }
 
