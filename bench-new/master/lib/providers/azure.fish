@@ -195,6 +195,82 @@ function finalize_azure_task_runners
     log_info "Task runners will automatically connect to orchestrator and claim tasks"
 end
 
+function azure_task_runners_exist
+    set -l tf_dir "$BENCH_DIR/infrastructure/azure"
+
+    if not test -f "$tf_dir/terraform.tfstate"
+        return 1
+    end
+
+    if not test -d "$tf_dir/.terraform"
+        terraform -chdir="$tf_dir" init -input=false >/dev/null 2>&1
+    end
+
+    set -l instances (terraform -chdir="$tf_dir" output -json task_runner_instances 2>/dev/null)
+    if test -z "$instances"; or test "$instances" = "null"
+        return 1
+    end
+
+    set -l count (echo $instances | jq -r 'length')
+    test "$count" -gt 0
+end
+
+function azure_run_id_matches
+    set -l run_id $argv[1]
+    set -l tf_dir "$BENCH_DIR/infrastructure/azure"
+
+    if not test -f "$tf_dir/terraform.tfstate"
+        return 1
+    end
+
+    set -l existing_run_id (terraform -chdir="$tf_dir" output -raw run_id 2>/dev/null)
+    test -n "$existing_run_id"; and test "$existing_run_id" = "$run_id"
+end
+
+function show_existing_azure_task_runners
+    set -l tf_dir "$BENCH_DIR/infrastructure/azure"
+    set -l instances (terraform -chdir="$tf_dir" output -json task_runner_instances 2>/dev/null)
+
+    if test -n "$instances"; and test "$instances" != "null"
+        log_success "Azure task runner instances already present:"
+        echo $instances | jq -r 'to_entries[] | "  \(.key): \(.value.instance_type) (\(.value.public_ip))"'
+    end
+end
+
+function update_azure_status
+    set -l tf_dir "$BENCH_DIR/infrastructure/azure"
+    set -l now (date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    set -l instances (terraform -chdir="$tf_dir" output -json task_runner_instances 2>/dev/null)
+    if test -z "$instances"; or test "$instances" = "null"
+        log_warning "Unable to update status.json with Azure outputs"
+        return 1
+    end
+
+    set -l instance_ids (terraform -chdir="$tf_dir" output -json task_runner_instance_ids 2>/dev/null)
+    if test -z "$instance_ids"; or test "$instance_ids" = "null"
+        set instance_ids "[]"
+    end
+
+    set -l public_ips (echo $instances | jq -c '[.[] | .public_ip]')
+    set -l resource_group (terraform -chdir="$tf_dir" output -raw resource_group_name 2>/dev/null)
+
+    status_update \
+        '(.providers //= {}) |
+         .providers.azure = {
+           tf_dir: $tf_dir,
+           last_apply_at: $last_apply_at,
+           resource_group: $resource_group,
+           instance_ids: $instance_ids,
+           public_ips: $public_ips
+         }' \
+        --arg tf_dir "$tf_dir" \
+        --arg last_apply_at "$now" \
+        --arg resource_group "$resource_group" \
+        --argjson instance_ids "$instance_ids" \
+        --argjson public_ips "$public_ips"
+end
+
 function setup_azure_task_runners
     # Legacy function for backwards compatibility (runs synchronously)
     if not prepare_azure_task_runners

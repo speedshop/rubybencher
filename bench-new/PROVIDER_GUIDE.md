@@ -34,6 +34,20 @@ Each provider must be registered and implement a setup function:
   - Default for local: **1**
   - If `task_runners.count` is set, use `min(vCPU, count)` (never less than 1)
 
+### Resume behavior (status.json)
+
+The master script is idempotent and will reuse existing provider infrastructure when possible:
+
+- If Terraform state exists and outputs report instances for the current `RUN_ID`, the provider apply is skipped.
+- If the stored `run_id` differs, the provider should be re-applied.
+- Provider outputs are written into `status.json` for future runs.
+
+To support this, cloud providers should expose the following outputs in `outputs.tf`:
+
+- `task_runner_instances` (map of alias -> instance details including `public_ip`)
+- `task_runner_instance_ids` (list of instance IDs)
+- `run_id` (the deployment's run ID)
+
 ### Master flow
 
 The master script:
@@ -103,6 +117,8 @@ Create `bench-new/infrastructure/<provider>/` with at least:
   - run one container per `vcpu_count` (with CPU pinning)
 - `outputs.tf`  
   - expose instance IPs for debug, e.g. `task_runner_instances`
+  - include `task_runner_instance_ids`
+  - include `run_id`
 
 ### 5) Task runner user-data contract
 

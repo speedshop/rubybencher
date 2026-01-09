@@ -35,12 +35,19 @@ function main
     # Start local orchestrator if requested (uses API_KEY)
     start_local_orchestrator
 
+    # Load status.json for auto-resume
+    maybe_resume_from_status
+
     # Setup infrastructure - spawns meta terraform in pane
     setup_infrastructure
 
     # Generate run ID early so we can prepare provider terraform
-    set -g RUN_ID (generate_run_id)
-    log_info "Generated run ID: $RUN_ID"
+    if test -z "$RUN_ID"
+        set -g RUN_ID (generate_run_id)
+        log_info "Generated run ID: $RUN_ID"
+    else
+        log_info "Using run ID: $RUN_ID"
+    end
 
     # Determine providers and validate configuration
     set -l providers (configured_providers)
@@ -84,6 +91,17 @@ function main
         for provider in $pre_providers
             switch $provider
                 case aws
+                    if aws_task_runners_exist
+                        if aws_run_id_matches "$RUN_ID"
+                            log_info "AWS task runners already exist for run $RUN_ID; skipping apply"
+                            show_existing_aws_task_runners
+                            update_aws_status existing
+                            continue
+                        else
+                            log_info "AWS task runners exist but run ID differs; recreating"
+                        end
+                    end
+
                     if prepare_aws_task_runners
                         set -l tf_dir (get_aws_terraform_dir)
                         set -l tf_cmd "terraform -chdir='$tf_dir' apply -auto-approve -parallelism=30"
@@ -93,6 +111,17 @@ function main
                         log_info "AWS terraform running in pane..."
                     end
                 case azure
+                    if azure_task_runners_exist
+                        if azure_run_id_matches "$RUN_ID"
+                            log_info "Azure task runners already exist for run $RUN_ID; skipping apply"
+                            show_existing_azure_task_runners
+                            update_azure_status existing
+                            continue
+                        else
+                            log_info "Azure task runners exist but run ID differs; recreating"
+                        end
+                    end
+
                     if prepare_azure_task_runners
                         set -l tf_dir (get_azure_terraform_dir)
                         set -l tf_cmd "terraform -chdir='$tf_dir' apply -auto-approve -parallelism=30"
@@ -108,8 +137,14 @@ function main
     # Wait for orchestrator to be ready
     wait_for_orchestrator
 
-    # Create the benchmark run (uses pre-generated RUN_ID)
-    create_run
+    # Create or resume the benchmark run
+    if test "$RESUME_RUN" = true
+        log_info "Skipping run creation (resuming run $RUN_ID)"
+    else
+        create_run
+    end
+
+    status_set_run "$RUN_ID"
 
     # Start post-run providers (local)
     for provider in $post_providers
@@ -131,8 +166,10 @@ function main
         switch $provider
             case aws
                 finalize_aws_task_runners
+                update_aws_status applied
             case azure
                 finalize_azure_task_runners
+                update_azure_status applied
         end
         log_success "$provider task runner setup completed"
     end

@@ -69,6 +69,20 @@ function get_orchestrator_config
     if test "$SKIP_INFRA" = true
         # Using existing infrastructure - need orchestrator URL
         if test -z "$ORCHESTRATOR_URL"
+            set -l status_url (status_get '.meta.orchestrator_url')
+            if test -n "$status_url"
+                set -g ORCHESTRATOR_URL "$status_url"
+            end
+        end
+
+        if test -z "$API_KEY"
+            set -l status_key (status_get '.meta.api_key')
+            if test -n "$status_key"
+                set -g API_KEY "$status_key"
+            end
+        end
+
+        if test -z "$ORCHESTRATOR_URL"
             log_error "BENCHMARK_ORCHESTRATOR_URL environment variable is required with --skip-infra"
             exit 1
         end
@@ -81,9 +95,29 @@ function get_orchestrator_config
 
     log_info "Getting orchestrator configuration from terraform..."
 
-    set -g ORCHESTRATOR_URL (terraform -chdir="$tf_dir" output -raw orchestrator_url 2>/dev/null)
-    set -g API_KEY (terraform -chdir="$tf_dir" output -raw api_key 2>/dev/null)
-    set -g S3_BUCKET (terraform -chdir="$tf_dir" output -raw s3_bucket_name 2>/dev/null)
+    if test "$RESUME_META" = true
+        if test -z "$ORCHESTRATOR_URL"; and test -n "$STATUS_ORCHESTRATOR_URL"
+            set -g ORCHESTRATOR_URL "$STATUS_ORCHESTRATOR_URL"
+        end
+        if test -z "$API_KEY"; and test -n "$STATUS_API_KEY"
+            set -g API_KEY "$STATUS_API_KEY"
+        end
+        if test -z "$S3_BUCKET"; and test -n "$STATUS_S3_BUCKET_NAME"
+            set -g S3_BUCKET "$STATUS_S3_BUCKET_NAME"
+        end
+    end
+
+    if test -z "$ORCHESTRATOR_URL"
+        set -g ORCHESTRATOR_URL (terraform -chdir="$tf_dir" output -raw orchestrator_url 2>/dev/null)
+    end
+
+    if test -z "$API_KEY"
+        set -g API_KEY (terraform -chdir="$tf_dir" output -raw api_key 2>/dev/null)
+    end
+
+    if test -z "$S3_BUCKET"
+        set -g S3_BUCKET (terraform -chdir="$tf_dir" output -raw s3_bucket_name 2>/dev/null)
+    end
 
     if test -z "$ORCHESTRATOR_URL"
         log_error "Failed to get orchestrator URL from terraform"
@@ -94,6 +128,44 @@ function get_orchestrator_config
         log_error "Failed to get API key from terraform"
         exit 1
     end
+
+    set -l bastion_public_ip (terraform -chdir="$tf_dir" output -raw bastion_public_ip 2>/dev/null)
+    if test -z "$bastion_public_ip"
+        set bastion_public_ip (status_get '.meta.bastion_public_ip')
+    end
+
+    set -l orchestrator_public_ip (terraform -chdir="$tf_dir" output -raw orchestrator_public_ip 2>/dev/null)
+    if test -z "$orchestrator_public_ip"
+        set orchestrator_public_ip (status_get '.meta.orchestrator_public_ip')
+    end
+
+    set -l aws_region (terraform -chdir="$tf_dir" output -raw aws_region 2>/dev/null)
+    if test -z "$aws_region"
+        set aws_region (status_get '.meta.aws_region')
+    end
+
+    set -l key_name (terraform -chdir="$tf_dir" output -raw key_name 2>/dev/null)
+    if test -z "$key_name"
+        set key_name (status_get '.meta.key_name')
+    end
+
+    set -l s3_bucket_name (terraform -chdir="$tf_dir" output -raw s3_bucket_name 2>/dev/null)
+    if test -z "$s3_bucket_name"
+        set s3_bucket_name (status_get '.meta.s3_bucket_name')
+    end
+
+    status_set_meta "$ORCHESTRATOR_URL" "$API_KEY" "$bastion_public_ip" "$orchestrator_public_ip" "$aws_region" "$key_name" "$s3_bucket_name"
+end
+
+function orchestrator_reachable
+    set -l url $argv[1]
+
+    if test -z "$url"
+        return 1
+    end
+
+    set -l response (curl -s -o /dev/null -w "%{http_code}" "$url/up" 2>/dev/null)
+    test "$response" = "200"
 end
 
 function wait_for_orchestrator

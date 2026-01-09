@@ -6,6 +6,8 @@ set -g DEBUG false
 set -g API_KEY ""
 set -g MOCK_BENCHMARK false
 set -g NON_INTERACTIVE false
+set -g RESUME_META false
+set -g RESUME_RUN false
 
 set -g CLI_LOCAL_ORCHESTRATOR false
 set -g CLI_SKIP_INFRA false

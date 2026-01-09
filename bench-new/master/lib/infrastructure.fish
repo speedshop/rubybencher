@@ -9,6 +9,11 @@ function setup_infrastructure
         return 0
     end
 
+    if test "$RESUME_META" = true
+        log_info "Reusing existing meta infrastructure from status.json"
+        return 0
+    end
+
     log_info "Setting up meta-infrastructure on AWS (orchestrator, bastion, S3, networking)..."
 
     set -l tf_dir "$BENCH_DIR/infrastructure/meta"

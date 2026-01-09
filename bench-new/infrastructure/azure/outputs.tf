@@ -19,3 +19,13 @@ output "azure_region" {
   description = "Azure region"
   value       = var.azure_region
 }
+
+output "task_runner_instance_ids" {
+  description = "List of task runner instance IDs"
+  value       = [for vm in azurerm_linux_virtual_machine.task_runner : vm.id]
+}
+
+output "run_id" {
+  description = "Run ID for this deployment"
+  value       = var.run_id
+}

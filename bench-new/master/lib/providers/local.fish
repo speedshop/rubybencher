@@ -10,15 +10,8 @@ function start_local_task_runners
     set -l task_runner_dir "$BENCH_DIR/task-runner"
     set -l ruby_version (cat "$CONFIG_FILE" | jq -r '.ruby_version')
 
-    # Build the task runner image
-    log_info "Building task runner image..."
-    docker build -t task-runner:$ruby_version \
-        --build-arg RUBY_VERSION=$ruby_version \
-        "$task_runner_dir" >/dev/null 2>&1
-    or begin
-        log_error "Failed to build task runner image"
-        exit 1
-    end
+    set -l running_names (docker ps --format '{{.Names}}' 2>/dev/null)
+    set -l existing_names (docker ps -a --format '{{.Names}}' 2>/dev/null)
 
     # For local provider, the orchestrator URL needs to be accessible from the container
     set -l container_orchestrator_url "$ORCHESTRATOR_URL"
@@ -39,6 +32,36 @@ function start_local_task_runners
         # Start the configured number of task runners for this instance type
         for runner_idx in (seq 1 $runner_count)
             set -l container_name "task-runner-local-$instance_alias-$runner_idx-$RUN_ID"
+
+            if contains -- $container_name $running_names
+                log_info "Task runner already running: $container_name"
+                continue
+            end
+
+            if contains -- $container_name $existing_names
+                log_info "Starting existing task runner container: $container_name"
+                docker start "$container_name" >/dev/null
+                or begin
+                    log_error "Failed to start existing task runner $container_name"
+                    exit 1
+                end
+
+                log_success "Started task runner: $container_name"
+                continue
+            end
+
+            # Build the task runner image (only if we need to launch new containers)
+            if not set -q TASK_RUNNER_IMAGE_READY
+                set -g TASK_RUNNER_IMAGE_READY true
+                log_info "Building task runner image..."
+                docker build -t task-runner:$ruby_version \
+                    --build-arg RUBY_VERSION=$ruby_version \
+                    "$task_runner_dir" >/dev/null 2>&1
+                or begin
+                    log_error "Failed to build task runner image"
+                    exit 1
+                end
+            end
 
             log_info "Starting task runner $runner_idx/$runner_count for local/$instance_alias ($instance_type)..."
 
