@@ -21,6 +21,28 @@ function status_get
     echo $value
 end
 
+function config_file_hash
+    if not test -f "$CONFIG_FILE"
+        return 1
+    end
+
+    if command -q shasum
+        set -l hash (shasum -a 256 "$CONFIG_FILE" | awk '{print $1}')
+    else if command -q sha256sum
+        set -l hash (sha256sum "$CONFIG_FILE" | awk '{print $1}')
+    else if command -q openssl
+        set -l hash (openssl dgst -sha256 "$CONFIG_FILE" | awk '{print $2}')
+    else
+        return 1
+    end
+
+    if test -z "$hash"
+        return 1
+    end
+
+    echo $hash
+end
+
 function status_update
     set -l filter $argv[1]
     set -l jq_args $argv[2..-1]
@@ -39,11 +61,22 @@ end
 function status_set_run
     set -l run_id $argv[1]
     set -l now (date -u +"%Y-%m-%dT%H:%M:%SZ")
+    set -l config_path "$CONFIG_FILE"
+    set -l config_hash (config_file_hash)
+
+    if test -z "$config_hash"
+        log_warning "Unable to hash config file for status.json"
+        set config_hash ""
+    end
 
     status_update \
-        '(.created_at //= $created_at) | .last_run_id = $run_id' \
+        '(.created_at //= $created_at) |
+         .last_run_id = $run_id |
+         .config = { path: $config_path, sha256: $config_hash }' \
         --arg created_at "$now" \
-        --arg run_id "$run_id"
+        --arg run_id "$run_id" \
+        --arg config_path "$config_path" \
+        --arg config_hash "$config_hash"
 end
 
 function status_set_meta
@@ -108,6 +141,40 @@ function fetch_run_status
     end
 
     echo $run_status
+end
+
+function enforce_status_config_match
+    if not status_exists
+        return 0
+    end
+
+    set -l status_path (status_get '.config.path')
+    set -l status_hash (status_get '.config.sha256')
+
+    if test -n "$status_path"; and test "$status_path" != "$CONFIG_FILE"
+        log_error "status.json was created with a different config file: $status_path"
+        log_error "Current config: $CONFIG_FILE"
+        log_error "Delete status.json or use the same config file."
+        exit 1
+    end
+
+    if test -n "$status_hash"
+        set -l current_hash (config_file_hash)
+        if test -z "$current_hash"
+            log_error "Unable to hash config file for resume check"
+            exit 1
+        end
+
+        if test "$status_hash" != "$current_hash"
+            log_error "status.json config hash does not match current config file"
+            log_error "Delete status.json or revert config changes before resuming."
+            exit 1
+        end
+    end
+
+    if test -z "$status_path"; and test -z "$status_hash"
+        log_warning "status.json missing config metadata; resume safety check skipped"
+    end
 end
 
 function maybe_resume_from_status

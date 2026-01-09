@@ -36,6 +36,7 @@ function main
     start_local_orchestrator
 
     # Load status.json for auto-resume
+    enforce_status_config_match
     maybe_resume_from_status
 
     # Setup infrastructure - spawns meta terraform in pane

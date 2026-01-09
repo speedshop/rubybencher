@@ -28,6 +28,7 @@ The master script writes `status.json` at the repo root and uses it to resume ru
 - If `status.json` exists and the orchestrator is reachable, meta Terraform is skipped.
 - If the previous run is still `running`, the master resumes it instead of creating a new run.
 - AWS/Azure task runners are only re-applied when Terraform state is missing or the stored run ID does not match.
+- The current config file must match the one recorded in `status.json` (path + hash), or the run aborts.
 - `status.json` is ignored by git and removed by `bench-new/nuke/nuke.fish`.
 
 ## Development
@@ -79,7 +80,7 @@ mise exec -- fnox list
 mise exec -- fnox get ARM_SUBSCRIPTION_ID
 
 # Run with secrets loaded
-mise exec -- ./bench-new/master/run.fish -c bench-new/config/azure-single.json
+mise exec -- fnox exec ./bench-new/master/run.fish -c bench-new/config/azure-single.json
 ```
 
 When adding new secrets, update the `rubybencher` 1Password item first, then reference it in `fnox.toml`. Never commit raw secrets.

@@ -127,6 +127,7 @@ The master script writes `status.json` at the repo root and uses it to resume ru
 - If `status.json` exists and the orchestrator is reachable, meta Terraform is skipped.
 - If the previous run is still `running`, the master resumes it instead of creating a new run.
 - AWS/Azure task runners are only re-applied when Terraform state is missing or the stored run ID does not match.
+- The current config file must match the one recorded in `status.json` (path + hash), or the run aborts.
 - `status.json` is ignored by git and removed by `bench-new/nuke/nuke.fish`.
 
 ## Configuration
