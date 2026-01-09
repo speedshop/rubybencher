@@ -128,7 +128,7 @@ jobs:
       - name: Full E2E with Mock Benchmark
         run: |
           fish bench-new/master/run.fish \
-            -c bench-new/config/example.json \
+            -c bench-new/config/ci.json \
             --local-orchestrator \
             --mock \
             --non-interactive
