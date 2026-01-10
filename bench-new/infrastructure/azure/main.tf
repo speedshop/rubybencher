@@ -25,6 +25,12 @@ data "terraform_remote_state" "meta" {
 locals {
   orchestrator_url = data.terraform_remote_state.meta.outputs.orchestrator_url
   api_key          = data.terraform_remote_state.meta.outputs.api_key
+
+  # Common tags for all resources (per NUKE_SPEC.md)
+  common_tags = {
+    rb_managed = "true"
+    rb_run_id  = var.run_id
+  }
 }
 
 locals {
@@ -49,6 +55,7 @@ locals {
 resource "azurerm_resource_group" "main" {
   name     = "railsbencher-${var.run_id}"
   location = var.azure_region
+  tags     = local.common_tags
 }
 
 resource "azurerm_virtual_network" "main" {
@@ -56,6 +63,7 @@ resource "azurerm_virtual_network" "main" {
   address_space       = ["10.0.0.0/16"]
   location            = var.azure_region
   resource_group_name = azurerm_resource_group.main.name
+  tags                = local.common_tags
 }
 
 resource "azurerm_subnet" "main" {
@@ -69,6 +77,7 @@ resource "azurerm_network_security_group" "task_runner" {
   name                = "railsbencher-nsg-${var.run_id}"
   location            = var.azure_region
   resource_group_name = azurerm_resource_group.main.name
+  tags                = local.common_tags
 
   security_rule {
     name                       = "AllowSSH"
@@ -93,7 +102,9 @@ resource "azurerm_public_ip" "task_runner" {
   name                = "railsbencher-ip-${each.key}-${var.run_id}"
   location            = var.azure_region
   resource_group_name = azurerm_resource_group.main.name
-  allocation_method   = "Dynamic"
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = local.common_tags
 }
 
 resource "azurerm_network_interface" "task_runner" {
@@ -101,6 +112,7 @@ resource "azurerm_network_interface" "task_runner" {
   name                = "railsbencher-nic-${each.key}-${var.run_id}"
   location            = var.azure_region
   resource_group_name = azurerm_resource_group.main.name
+  tags                = local.common_tags
 
   ip_configuration {
     name                          = "primary"
@@ -153,10 +165,9 @@ resource "azurerm_linux_virtual_machine" "task_runner" {
     vcpu_count       = var.vcpu_count[each.value.alias]
   }))
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name         = "railsbencher-task-runner-${each.key}-${var.run_id}"
-    RunId        = var.run_id
     InstanceType = each.value.instance_type
     Alias        = each.value.alias
-  }
+  })
 }

@@ -6,8 +6,8 @@
   },
   "azure": [
     {
-      "instance_type": "Standard_D2s_v5",
-      "alias": "d2s-v5"
+      "instance_type": "Standard_D2s_v4",
+      "alias": "d2s-v4"
     }
   ]
 }

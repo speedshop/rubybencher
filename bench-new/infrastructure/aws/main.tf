@@ -11,6 +11,13 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+
+  default_tags {
+    tags = {
+      rb_managed = "true"
+      rb_run_id  = var.run_id
+    }
+  }
 }
 
 # Fetch meta infrastructure state via data sources
@@ -23,25 +30,71 @@ data "terraform_remote_state" "meta" {
 }
 
 locals {
-  vpc_id               = data.terraform_remote_state.meta.outputs.vpc_id
-  subnet_id            = data.terraform_remote_state.meta.outputs.public_subnet_id
-  bastion_sg_id        = data.terraform_remote_state.meta.outputs.bastion_security_group_id
-  orchestrator_url     = data.terraform_remote_state.meta.outputs.orchestrator_url
-  api_key              = data.terraform_remote_state.meta.outputs.api_key
+  # Only need orchestrator connection info from meta
+  orchestrator_url = data.terraform_remote_state.meta.outputs.orchestrator_url
+  api_key          = data.terraform_remote_state.meta.outputs.api_key
+}
+
+# Dedicated VPC for this benchmark run (quarantine per NUKE_SPEC.md)
+resource "aws_vpc" "run" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "railsbencher-vpc-${var.run_id}"
+  }
+}
+
+resource "aws_internet_gateway" "run" {
+  vpc_id = aws_vpc.run.id
+
+  tags = {
+    Name = "railsbencher-igw-${var.run_id}"
+  }
+}
+
+resource "aws_subnet" "run" {
+  vpc_id                  = aws_vpc.run.id
+  cidr_block              = var.subnet_cidr
+  availability_zone       = "${var.aws_region}a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "railsbencher-subnet-${var.run_id}"
+  }
+}
+
+resource "aws_route_table" "run" {
+  vpc_id = aws_vpc.run.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.run.id
+  }
+
+  tags = {
+    Name = "railsbencher-rt-${var.run_id}"
+  }
+}
+
+resource "aws_route_table_association" "run" {
+  subnet_id      = aws_subnet.run.id
+  route_table_id = aws_route_table.run.id
 }
 
 # Security group for task runners
 resource "aws_security_group" "task_runner" {
   name        = "railsbencher-task-runner-sg-${var.run_id}"
   description = "Security group for task runners"
-  vpc_id      = local.vpc_id
+  vpc_id      = aws_vpc.run.id
 
-  # SSH access from bastion (for debugging)
+  # SSH access from allowed CIDR (for debugging)
   ingress {
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [local.bastion_sg_id]
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ssh_cidr]
   }
 
   # All outbound traffic (needed to reach orchestrator and S3)
@@ -53,8 +106,7 @@ resource "aws_security_group" "task_runner" {
   }
 
   tags = {
-    Name  = "railsbencher-task-runner-sg-${var.run_id}"
-    RunId = var.run_id
+    Name = "railsbencher-task-runner-sg-${var.run_id}"
   }
 }
 
@@ -128,7 +180,7 @@ resource "aws_instance" "task_runner" {
   ami           = local.instance_arch[each.value.alias] == "arm64" ? data.aws_ami.amazon_linux_arm64.id : data.aws_ami.amazon_linux_x86_64.id
   instance_type = each.value.instance_type
   key_name      = var.key_name
-  subnet_id     = local.subnet_id
+  subnet_id     = aws_subnet.run.id
 
   vpc_security_group_ids = [aws_security_group.task_runner.id]
 
@@ -151,7 +203,6 @@ resource "aws_instance" "task_runner" {
 
   tags = {
     Name         = "railsbencher-task-runner-${each.key}-${var.run_id}"
-    RunId        = var.run_id
     InstanceType = each.value.instance_type
     Alias        = each.value.alias
   }

@@ -14,13 +14,13 @@ Providers integrate through the master script registry at:
 
 Each provider must be registered and implement a setup function:
 
-- `provider_list`  
+- `provider_list`
   Return a space-delimited list of providers (e.g., `aws azure local`).
-- `provider_phase $provider`  
+- `provider_phase $provider`
   Return `pre_orchestrator` for cloud providers that need infra created in advance, or `post_run` for providers that should start after the run is created (e.g., local Docker).
-- `provider_validate $provider`  
+- `provider_validate $provider`
   Validate provider-specific constraints (e.g., cloud providers must not run with `--local-orchestrator`).
-- `provider_setup_task_runners $provider`  
+- `provider_setup_task_runners $provider`
   Dispatch to the provider's implementation.
 - Provider implementation function name: `setup_<provider>_task_runners`
 
@@ -100,22 +100,22 @@ This drives:
 
 Create `bench-new/infrastructure/<provider>/` with at least:
 
-- `variables.tf`  
+- `variables.tf`
   - `run_id`, `ruby_version`, `instance_types`, `vcpu_count`, `instance_count`
   - provider auth inputs as needed
   - `mock_benchmark`, `debug_mode`
-- `main.tf`  
+- `main.tf`
   - compute resources (VMs / instances)
   - networking rules (allow outbound HTTPS; SSH only if required)
   - pulls orchestrator URL + API key from AWS meta:
     - `data.terraform_remote_state.meta.outputs.orchestrator_url`
     - `data.terraform_remote_state.meta.outputs.api_key`
-- `user-data.sh` or cloud-init template  
+- `user-data.sh` or cloud-init template
   - install Docker + git
   - clone repo
   - build task runner image
   - run one container per `vcpu_count` (with CPU pinning)
-- `outputs.tf`  
+- `outputs.tf`
   - expose instance IPs for debug, e.g. `task_runner_instances`
   - include `task_runner_instance_ids`
   - include `run_id`
@@ -157,9 +157,9 @@ Update the nuke scripts to destroy provider resources:
 
 Reference implementations:
 
-- AWS: `bench-new/master/lib/providers/aws.fish`  
+- AWS: `bench-new/master/lib/providers/aws.fish`
   `bench-new/infrastructure/aws`
-- Azure: `bench-new/master/lib/providers/azure.fish`  
+- Azure: `bench-new/master/lib/providers/azure.fish`
   `bench-new/infrastructure/azure`
 - Local: `bench-new/master/lib/providers/local.fish`
 

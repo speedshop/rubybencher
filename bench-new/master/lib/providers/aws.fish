@@ -59,10 +59,11 @@ function prepare_aws_task_runners
     set -l ruby_version (cat "$CONFIG_FILE" | jq -r '.ruby_version')
     set -l key_name (terraform -chdir="$meta_tf_dir" output -raw key_name 2>/dev/null || echo "")
     set -l aws_region (terraform -chdir="$meta_tf_dir" output -raw aws_region 2>/dev/null || echo "us-east-1")
+    set -l allowed_ssh_cidr (terraform -chdir="$meta_tf_dir" output -raw allowed_ssh_cidr 2>/dev/null || echo "0.0.0.0/0")
 
     # If key_name not in meta output, try to get from tfvars
     if test -z "$key_name"
-        set key_name (grep 'key_name' "$meta_tf_dir/terraform.tfvars" 2>/dev/null | sed 's/.*=\s*"\(.*\)"/\1/' | head -1)
+        set key_name (grep 'key_name' "$meta_tf_dir/terraform.tfvars" 2>/dev/null | sed 's/.*=[[:space:]]*"\(.*\)"/\1/' | head -1)
     end
 
     if test -z "$key_name"
@@ -131,15 +132,16 @@ function prepare_aws_task_runners
     end
 
     # Create tfvars file for this run
-    echo "aws_region      = \"$aws_region\"
-key_name        = \"$key_name\"
-run_id          = \"$RUN_ID\"
-ruby_version    = \"$ruby_version\"
-instance_types  = $instance_types_json
-vcpu_count      = $vcpu_map
-instance_count  = $instance_count_map
-mock_benchmark  = $mock_flag
-debug_mode      = $debug_flag" > "$AWS_TF_DIR/terraform.tfvars"
+    echo "aws_region       = \"$aws_region\"
+key_name         = \"$key_name\"
+run_id           = \"$RUN_ID\"
+ruby_version     = \"$ruby_version\"
+instance_types   = $instance_types_json
+vcpu_count       = $vcpu_map
+instance_count   = $instance_count_map
+mock_benchmark   = $mock_flag
+debug_mode       = $debug_flag
+allowed_ssh_cidr = \"$allowed_ssh_cidr\"" > "$AWS_TF_DIR/terraform.tfvars"
 
     if test "$DEBUG" = true
         echo "AWS terraform.tfvars:"

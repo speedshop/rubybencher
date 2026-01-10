@@ -2,6 +2,48 @@
 
 set -g TMUX_SESSION_NAME "rubybencher"
 set -g TMUX_PANE_TEMP_DIR "/tmp/rubybencher-panes"
+set -g TMUX_MAIN_PANE_TITLE "Master"
+set -g TMUX_MAIN_PANE_PERCENT 60
+set -g TMUX_PANE_BORDER_STATUS "top"
+set -g TMUX_PANE_BORDER_FORMAT " #{pane_title} "
+set -g TMUX_PANE_SPLIT_HEIGHT "30%"
+
+# Default layout sizing (percent of window height).
+if not set -q TMUX_MAIN_PANE_PERCENT
+    set -g TMUX_MAIN_PANE_PERCENT 55
+end
+
+if not set -q TMUX_BOTTOM_PANE_PERCENT
+    set -g TMUX_BOTTOM_PANE_PERCENT 30
+end
+set -q TMUX_MAIN_PANE_HEIGHT; or set -g TMUX_MAIN_PANE_HEIGHT "40%"
+set -q TMUX_PANE_SPLIT_HEIGHT; or set -g TMUX_PANE_SPLIT_HEIGHT "40%"
+
+if not set -q TMUX_MAIN_PANE_TITLE
+    set -g TMUX_MAIN_PANE_TITLE "Master"
+end
+
+if not set -q TMUX_MAIN_PANE_PERCENT
+    set -g TMUX_MAIN_PANE_PERCENT 40
+end
+
+set -g TMUX_MAIN_PANE_ID ""
+
+function tmux_sync_env
+    # Copy exported env into tmux so secrets from fnox are available in panes.
+    for line in (env)
+        set -l parts (string split -m1 "=" -- $line)
+        set -l name $parts[1]
+        set -l value $parts[2]
+
+        switch $name
+            case TMUX TMUX_PANE PWD OLDPWD SHLVL FISH_PID
+                continue
+        end
+
+        tmux set-environment -g $name $value
+    end
+end
 
 function ensure_tmux_session
     # If already in tmux, we're good
@@ -14,16 +56,59 @@ function ensure_tmux_session
     set -l run_script "$SCRIPT_DIR/run.fish"
 
     # Pass all original arguments
+    tmux_sync_env
     tmux new-session -s $TMUX_SESSION_NAME "fish $run_script $argv; read -P 'Press Enter to close...'"
     exit $status
+end
+
+function tmux_configure_window
+    if not set -q TMUX
+        return 0
+    end
+
+    set -l main_title "Master"
+    if set -q TMUX_MAIN_PANE_TITLE
+        set main_title "$TMUX_MAIN_PANE_TITLE"
+    end
+
+    tmux rename-window "master"
+    tmux select-pane -t "$TMUX_PANE" -T "$main_title"
+
+    tmux set-window-option -t "$TMUX_PANE" pane-border-status top
+    tmux set-window-option -t "$TMUX_PANE" pane-border-format ' #{pane_title} '
+
+    # Allow tuning main pane height via TMUX_MAIN_PANE_HEIGHT_PCT.
+    set -l height_pct 45
+    if set -q TMUX_MAIN_PANE_HEIGHT_PCT
+        set height_pct $TMUX_MAIN_PANE_HEIGHT_PCT
+    end
+
+    if not string match -qr '^[0-9]+$' -- $height_pct
+        set height_pct 45
+    end
+
+    if test $height_pct -lt 20
+        set height_pct 20
+    else if test $height_pct -gt 80
+        set height_pct 80
+    end
+
+    set -l window_height (tmux display-message -p "#{window_height}")
+    if string match -qr '^[0-9]+$' -- $window_height
+        set -l main_height (math "floor($window_height * $height_pct / 100)")
+        if test $main_height -lt 6
+            set main_height 6
+        end
+        tmux set-window-option -t "$TMUX_PANE" main-pane-height $main_height
+    end
 end
 
 function tmux_init_pane_tracking
     # Create temp directory for pane exit status tracking
     mkdir -p $TMUX_PANE_TEMP_DIR
     # Clean up any stale files
-    rm -f $TMUX_PANE_TEMP_DIR/*.status 2>/dev/null
-    rm -f $TMUX_PANE_TEMP_DIR/*.running 2>/dev/null
+    command find $TMUX_PANE_TEMP_DIR -type f -name "*.status" -delete 2>/dev/null
+    command find $TMUX_PANE_TEMP_DIR -type f -name "*.running" -delete 2>/dev/null
 end
 
 function tmux_spawn_pane -a title cmd

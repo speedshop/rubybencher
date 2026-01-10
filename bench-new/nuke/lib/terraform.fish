@@ -53,3 +53,50 @@ function destroy_terraform
     # Then destroy meta infrastructure
     destroy_terraform_dir "$BENCH_DIR/infrastructure/meta" "meta"
 end
+
+function destroy_terraform_for_run
+    # Destroy only terraform managed resources for a specific run_id
+    # Meta infrastructure is NEVER destroyed in targeted mode
+    set -l target_run_id $argv[1]
+
+    log_info "Checking Terraform state for run $target_run_id..."
+
+    # Check AWS terraform state for matching run_id
+    set -l aws_tf_dir "$BENCH_DIR/infrastructure/aws"
+    if test -f "$aws_tf_dir/terraform.tfstate"; or test -d "$aws_tf_dir/.terraform"
+        if test -d "$aws_tf_dir/.terraform"
+            set -l state_run_id (terraform -chdir="$aws_tf_dir" output -raw run_id 2>/dev/null)
+            if test "$state_run_id" = "$target_run_id"
+                log_info "AWS terraform state matches run $target_run_id - destroying..."
+                destroy_terraform_dir "$aws_tf_dir" "AWS task runners"
+            else if test -n "$state_run_id"
+                log_info "AWS terraform state is for run $state_run_id, not $target_run_id - skipping"
+            else
+                log_info "No AWS terraform state found"
+            end
+        end
+    else
+        log_info "No AWS terraform infrastructure found"
+    end
+
+    # Check Azure terraform state for matching run_id
+    set -l azure_tf_dir "$BENCH_DIR/infrastructure/azure"
+    if test -f "$azure_tf_dir/terraform.tfstate"; or test -d "$azure_tf_dir/.terraform"
+        if test -d "$azure_tf_dir/.terraform"
+            set -l state_run_id (terraform -chdir="$azure_tf_dir" output -raw run_id 2>/dev/null)
+            if test "$state_run_id" = "$target_run_id"
+                log_info "Azure terraform state matches run $target_run_id - destroying..."
+                destroy_terraform_dir "$azure_tf_dir" "Azure task runners"
+            else if test -n "$state_run_id"
+                log_info "Azure terraform state is for run $state_run_id, not $target_run_id - skipping"
+            else
+                log_info "No Azure terraform state found"
+            end
+        end
+    else
+        log_info "No Azure terraform infrastructure found"
+    end
+
+    # NOTE: Meta infrastructure is NEVER destroyed in targeted mode
+    log_info "Meta infrastructure preserved (shared across runs)"
+end

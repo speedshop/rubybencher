@@ -25,3 +25,13 @@ output "run_id" {
   description = "Run ID for this deployment"
   value       = var.run_id
 }
+
+output "vpc_id" {
+  description = "VPC ID for this run"
+  value       = aws_vpc.run.id
+}
+
+output "subnet_id" {
+  description = "Subnet ID for this run"
+  value       = aws_subnet.run.id
+}

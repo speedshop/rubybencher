@@ -1,6 +1,11 @@
 function provider_list
-    echo aws azure local
+    echo aws
+    echo azure
+    echo local
 end
+
+
+
 
 function provider_in_config
     set -l provider $argv[1]

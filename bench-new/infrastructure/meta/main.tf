@@ -11,6 +11,12 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+
+  default_tags {
+    tags = {
+      rb_managed = "true"
+    }
+  }
 }
 
 # Random suffix for unique resource names

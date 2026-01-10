@@ -12,6 +12,29 @@ variable "key_name" {
 variable "run_id" {
   description = "Unique identifier for this benchmark run"
   type        = string
+
+  validation {
+    condition     = length(trim(var.run_id)) > 0
+    error_message = "run_id must be set to a non-empty value."
+  }
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block for the run VPC"
+  type        = string
+  default     = "10.1.0.0/16"
+}
+
+variable "subnet_cidr" {
+  description = "CIDR block for the run subnet"
+  type        = string
+  default     = "10.1.1.0/24"
+}
+
+variable "allowed_ssh_cidr" {
+  description = "CIDR block allowed to SSH to task runners"
+  type        = string
+  default     = "0.0.0.0/0"
 }
 
 variable "ruby_version" {

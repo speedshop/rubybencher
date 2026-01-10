@@ -67,16 +67,29 @@ function prepare_azure_task_runners
 
     set -l key_name (terraform -chdir="$meta_tf_dir" output -raw key_name 2>/dev/null || echo "")
     if test -z "$key_name"
-        set key_name (grep 'key_name' "$meta_tf_dir/terraform.tfvars" 2>/dev/null | sed 's/.*=\s*"\(.*\)"/\1/' | head -1)
+        set key_name (grep -E '^[[:space:]]*key_name' "$meta_tf_dir/terraform.tfvars" 2>/dev/null | sed -E 's/.*=[[:space:]]*"(.*)"/\1/' | head -1)
     end
 
-    set -l private_key_path (grep 'private_key_path' "$meta_tf_dir/terraform.tfvars" 2>/dev/null | sed 's/.*=\s*"\(.*\)"/\1/' | head -1)
+    set -l private_key_path ""
+    set -l private_key_path_line (grep -E '^[[:space:]]*private_key_path' "$meta_tf_dir/terraform.tfvars" 2>/dev/null | head -1)
+    if test -n "$private_key_path_line"
+        set private_key_path (string replace -r '^.*=[[:space:]]*"' '' -- $private_key_path_line)
+        set private_key_path (string replace -r '"[[:space:]]*$' '' -- $private_key_path)
+    end
     if test -z "$private_key_path"
         log_error "Could not determine private_key_path from meta terraform"
         exit 1
     end
 
-    set -l expanded_private_key_path (string replace -r '^~' $HOME -- $private_key_path)
+    set -l expanded_private_key_path ""
+    if string match -qr '^~' -- $private_key_path
+        set expanded_private_key_path (string replace -r '^~' $HOME -- $private_key_path)
+    else if string match -qr '^/' -- $private_key_path
+        set expanded_private_key_path $private_key_path
+    else
+        # Resolve relative to meta terraform dir
+        set expanded_private_key_path "$meta_tf_dir/$private_key_path"
+    end
     set -l ssh_public_key ""
 
     if test -f "$expanded_private_key_path"; and command -q ssh-keygen

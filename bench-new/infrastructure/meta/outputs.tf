@@ -74,3 +74,8 @@ output "ssh_helper_scripts" {
     ./infrastructure/meta/ssh-task-runner.fish <bastion_ip> <task_runner_ip>
   EOT
 }
+
+output "allowed_ssh_cidr" {
+  description = "CIDR block allowed for SSH access"
+  value       = var.allowed_ssh_cidr
+}

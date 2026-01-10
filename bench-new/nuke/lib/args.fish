@@ -4,6 +4,14 @@ function parse_args
         switch $argv[$i]
             case -f --force -y --yes
                 set -g FORCE true
+            case --run-id
+                set i (math $i + 1)
+                if test $i -le (count $argv)
+                    set -g TARGET_RUN_ID $argv[$i]
+                else
+                    log_error "--run-id requires a value"
+                    exit 1
+                end
             case -h --help
                 print_usage
                 exit 0
