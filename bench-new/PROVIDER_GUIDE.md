@@ -104,9 +104,12 @@ Create `bench-new/infrastructure/<provider>/` with at least:
   - `run_id`, `ruby_version`, `instance_types`, `vcpu_count`, `instance_count`
   - provider auth inputs as needed
   - `mock_benchmark`, `debug_mode`
+  - `allowed_ssh_cidr` (for SSH access rules)
 - `main.tf`
   - compute resources (VMs / instances)
   - networking rules (allow outbound HTTPS; SSH only if required)
+  - if supporting bastion SSH:
+    - allow inbound SSH from the bastion (see SSH section below)
   - pulls orchestrator URL + API key from AWS meta:
     - `data.terraform_remote_state.meta.outputs.orchestrator_url`
     - `data.terraform_remote_state.meta.outputs.api_key`
@@ -170,6 +173,45 @@ Reference implementations:
 - Missing `terraform_remote_state` outputs for orchestrator URL / API key
 - Running cloud provider with `--local-orchestrator`
 - Not exposing outbound HTTPS (task runners need orchestrator + S3)
+- Assuming bastion SSH works without allowing inbound SSH from the bastion
+- Using a different SSH username without documenting it or providing a helper script
+
+## SSH Bastion Support (on-demand SSH)
+
+The meta AWS stack includes a bastion host and helper scripts:
+
+- `bench-new/infrastructure/meta/ssh-orchestrator.fish`
+- `bench-new/infrastructure/meta/ssh-task-runner.fish <bastion_ip> <task_runner_ip>`
+
+To ensure users can SSH into **any** task runner on demand, a provider must support the following:
+
+### 1) Bastion reachability
+
+Task runners must be reachable **from the bastion host**:
+
+- Use `data.terraform_remote_state.meta.outputs.bastion_public_ip` to allow inbound SSH (port 22) from the bastion **public IP (/32)**.
+- If task runners have public IPs, allow inbound SSH from that bastion IP.
+- If task runners are private-only, **skip bastion SSH support** for that provider.
+
+### 2) SSH key alignment
+
+Use the **same SSH keypair** as the meta stack:
+
+- AWS providers should use `key_name` from meta Terraform outputs.
+- Non-AWS providers should derive the public key from meta `private_key_path` and inject it into instances.
+
+### 3) Task runner IP outputs
+
+Expose IPs in outputs so users can target instances:
+
+- `task_runner_instances` must include `public_ip` and `private_ip`.
+
+### 4) SSH username
+
+The current helper script assumes `ec2-user`. If your provider uses a different username (e.g. `azureuser`), either:
+
+- add a provider-specific SSH helper script, or
+- update the generic helper to accept a username argument.
 
 ## Quick Provider Skeleton
 
