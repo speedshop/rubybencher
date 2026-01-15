@@ -4,6 +4,3 @@ ruby = "3.4"
 node = "22"
 "npm:wrangler" = "latest"
 fnox = "latest"
-
-[env]
-_.source = { path = "./scripts/load-secrets.sh", tools = true }
