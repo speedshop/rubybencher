@@ -6,4 +6,4 @@ node = "22"
 fnox = "latest"
 
 [env]
-_.source = "fnox export --format=env --no-color | sed 's/^export //'"
+_.source = { path = "./scripts/load-secrets.sh", tools = true }
