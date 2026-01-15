@@ -17,6 +17,8 @@ mise.local.toml
 *.tfstate.backup
 .terraform.tfstate.lock.info
 .terraform.lock.hcl
+*.tfvars
+*.tfvars.json
 
 # Generated site output
 site/public/
