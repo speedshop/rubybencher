@@ -83,6 +83,9 @@ jobs:
       - name: Run API Tests
         run: ./test/orchestrator/api_tests.sh
 
+      - name: Run API Lifecycle Test
+        run: ./bench-new/orchestrator/test/integration/api_lifecycle_test.sh
+
       - name: Show Logs on Failure
         if: failure()
         run: docker compose -f bench-new/orchestrator/docker-compose.yml logs
