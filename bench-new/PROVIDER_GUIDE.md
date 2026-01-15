@@ -34,13 +34,13 @@ Each provider must be registered and implement a setup function:
   - Default for local: **1**
   - If `task_runners.count` is set, use `min(vCPU, count)` (never less than 1)
 
-### Resume behavior (status.json)
+### Resume behavior (status/)
 
 The master script is idempotent and will reuse existing provider infrastructure when possible:
 
 - If Terraform state exists and outputs report instances for the current `RUN_ID`, the provider apply is skipped.
 - If the stored `run_id` differs, the provider should be re-applied.
-- Provider outputs are written into `status.json` for future runs.
+- Provider outputs are written into `status/<run_id>.json` for future reference.
 
 To support this, cloud providers should expose the following outputs in `outputs.tf`:
 
