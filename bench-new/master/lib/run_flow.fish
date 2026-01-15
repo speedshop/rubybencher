@@ -159,8 +159,18 @@ function cleanup_on_interrupt
     log_warning "Interrupted!"
 
     if test "$NON_INTERACTIVE" = false
-        if gum confirm "Run nuke script to clean up infrastructure?"
-            fish "$BENCH_DIR/nuke/nuke.fish" -f
+        set -l cleanup_choice (gum choose \
+            "Everything" \
+            "Task runners for run $RUN_ID" \
+            "Nothing")
+
+        switch "$cleanup_choice"
+            case "Everything"
+                fish "$BENCH_DIR/nuke/nuke.fish" -f
+            case "Task runners for run $RUN_ID"
+                fish "$BENCH_DIR/nuke/nuke.fish" --run-id "$RUN_ID"
+            case '*'
+                log_info "Skipping cleanup"
         end
     end
 

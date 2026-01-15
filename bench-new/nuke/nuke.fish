@@ -31,24 +31,42 @@ function confirm_destruction
     end
 
     echo ""
-    gum style \
-        --border double \
-        --border-foreground 196 \
-        --align center \
-        --width 60 \
-        --padding "1" \
-        --foreground 196 \
-        "WARNING: DESTRUCTIVE OPERATION" \
-        "" \
-        "Target: $scope" \
-        "" \
-        "This will destroy:" \
-        "• AWS infrastructure (EC2, VPC, S3)" \
-        "• Azure infrastructure (VMs, VNet, NSG)" \
-        "• Terraform state" \
-        "• Local Docker containers" \
-        "" \
-        "This action cannot be undone!"
+    if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
+        gum style \
+            --border double \
+            --border-foreground 196 \
+            --align center \
+            --width 60 \
+            --padding "1" \
+            --foreground 196 \
+            "WARNING: DESTRUCTIVE OPERATION" \
+            "" \
+            "Target: $scope" \
+            "" \
+            "This will destroy task runners and related cloud resources" \
+            "for the specified run ID, plus matching terraform state." \
+            "" \
+            "This action cannot be undone!"
+    else
+        gum style \
+            --border double \
+            --border-foreground 196 \
+            --align center \
+            --width 60 \
+            --padding "1" \
+            --foreground 196 \
+            "WARNING: DESTRUCTIVE OPERATION" \
+            "" \
+            "Target: $scope" \
+            "" \
+            "This will destroy:" \
+            "• AWS infrastructure (EC2, VPC, S3)" \
+            "• Azure infrastructure (VMs, VNet, NSG)" \
+            "• Terraform state" \
+            "• Local Docker containers" \
+            "" \
+            "This action cannot be undone!"
+    end
 
     echo ""
     if not gum confirm --default=false "Are you sure you want to destroy infrastructure?"

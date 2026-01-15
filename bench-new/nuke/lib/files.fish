@@ -17,9 +17,20 @@ function cleanup_local_files
         log_info "Removed Azure task runner terraform.tfvars"
     end
 
+    set -l status_dir "$BENCH_DIR/../status"
+    if test -d "$status_dir"
+        rm -rf "$status_dir"
+        log_info "Removed status run files"
+    end
+
+    if test -f "$BENCH_DIR/../orchestrator.json"
+        rm -f "$BENCH_DIR/../orchestrator.json"
+        log_info "Removed orchestrator.json"
+    end
+
     if test -f "$BENCH_DIR/../status.json"
         rm -f "$BENCH_DIR/../status.json"
-        log_info "Removed status.json"
+        log_info "Removed legacy status.json"
     end
 
     # Optionally clean results

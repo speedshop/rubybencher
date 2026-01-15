@@ -226,7 +226,7 @@ function update_aws_status
 
     set -l instances (terraform -chdir="$tf_dir" output -json task_runner_instances 2>/dev/null)
     if test -z "$instances"; or test "$instances" = "null"
-        log_warning "Unable to update status.json with AWS outputs"
+        log_warning "Unable to update run status file with AWS outputs"
         return 1
     end
 
@@ -237,7 +237,7 @@ function update_aws_status
 
     set -l public_ips (echo $instances | jq -c '[.[] | .public_ip]')
 
-    status_update \
+    run_status_update \
         '(.providers //= {}) |
          .providers.aws = {
            tf_dir: $tf_dir,

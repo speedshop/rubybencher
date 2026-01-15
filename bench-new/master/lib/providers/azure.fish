@@ -256,7 +256,7 @@ function update_azure_status
 
     set -l instances (terraform -chdir="$tf_dir" output -json task_runner_instances 2>/dev/null)
     if test -z "$instances"; or test "$instances" = "null"
-        log_warning "Unable to update status.json with Azure outputs"
+        log_warning "Unable to update run status file with Azure outputs"
         return 1
     end
 
@@ -268,7 +268,7 @@ function update_azure_status
     set -l public_ips (echo $instances | jq -c '[.[] | .public_ip]')
     set -l resource_group (terraform -chdir="$tf_dir" output -raw resource_group_name 2>/dev/null)
 
-    status_update \
+    run_status_update \
         '(.providers //= {}) |
          .providers.azure = {
            tf_dir: $tf_dir,

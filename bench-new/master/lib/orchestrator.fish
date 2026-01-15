@@ -3,6 +3,10 @@ function start_local_orchestrator
         return 0
     end
 
+    if test "$REUSE_ORCHESTRATOR" = true
+        return 0
+    end
+
     log_info "Starting local orchestrator via docker compose..."
 
     set -l orchestrator_dir "$BENCH_DIR/orchestrator"
@@ -51,10 +55,57 @@ function initialize_api_key
     # For terraform mode, API key will be fetched from terraform output later
 end
 
+function load_orchestrator_session
+    if test "$REUSE_ORCHESTRATOR" != true
+        return 1
+    end
+
+    if not orchestrator_exists
+        log_error "orchestrator.json not found; run without --reuse-orchestrator first"
+        exit 1
+    end
+
+    set -g ORCHESTRATOR_URL (orchestrator_get '.orchestrator_url')
+    set -g API_KEY (orchestrator_get '.api_key')
+    set -g S3_BUCKET (orchestrator_get '.s3_bucket_name')
+    set -g ORCHESTRATOR_SESSION_LOCAL (orchestrator_get '.local')
+
+    if test -z "$ORCHESTRATOR_URL"
+        log_error "orchestrator.json is missing orchestrator_url"
+        exit 1
+    end
+
+    if test -z "$API_KEY"
+        log_error "orchestrator.json is missing api_key"
+        exit 1
+    end
+
+    if test -z "$ORCHESTRATOR_SESSION_LOCAL"
+        set -g ORCHESTRATOR_SESSION_LOCAL "false"
+    end
+
+    if test "$LOCAL_ORCHESTRATOR" = true; and test "$ORCHESTRATOR_SESSION_LOCAL" != "true"
+        log_error "orchestrator.json was created for a remote orchestrator"
+        log_error "Remove --local-orchestrator or update orchestrator.json"
+        exit 1
+    end
+
+    if test "$LOCAL_ORCHESTRATOR" = false; and test "$ORCHESTRATOR_SESSION_LOCAL" = "true"
+        log_error "orchestrator.json was created for a local orchestrator"
+        log_error "Use --local-orchestrator to match the saved session"
+        exit 1
+    end
+end
+
 function get_orchestrator_config
     # Environment variable can override orchestrator URL
     if set -q BENCHMARK_ORCHESTRATOR_URL
         set -g ORCHESTRATOR_URL "$BENCHMARK_ORCHESTRATOR_URL"
+    end
+
+    if test "$REUSE_ORCHESTRATOR" = true; and test -n "$ORCHESTRATOR_URL"
+        log_success "Using orchestrator from orchestrator.json: $ORCHESTRATOR_URL"
+        return 0
     end
 
     if test "$LOCAL_ORCHESTRATOR" = true
@@ -63,22 +114,32 @@ function get_orchestrator_config
             set -g ORCHESTRATOR_URL "http://localhost:3000"
         end
         # API key was already set by initialize_api_key
+        if test "$REUSE_ORCHESTRATOR" != true
+            orchestrator_set_meta "$ORCHESTRATOR_URL" "$API_KEY" "" "" "" "" "" "true"
+        end
         return 0
     end
 
     if test "$SKIP_INFRA" = true
         # Using existing infrastructure - need orchestrator URL
         if test -z "$ORCHESTRATOR_URL"
-            set -l status_url (status_get '.meta.orchestrator_url')
+            set -l status_url (orchestrator_get '.orchestrator_url')
             if test -n "$status_url"
                 set -g ORCHESTRATOR_URL "$status_url"
             end
         end
 
         if test -z "$API_KEY"
-            set -l status_key (status_get '.meta.api_key')
+            set -l status_key (orchestrator_get '.api_key')
             if test -n "$status_key"
                 set -g API_KEY "$status_key"
+            end
+        end
+
+        if test -z "$S3_BUCKET"
+            set -l status_bucket (orchestrator_get '.s3_bucket_name')
+            if test -n "$status_bucket"
+                set -g S3_BUCKET "$status_bucket"
             end
         end
 
@@ -86,6 +147,11 @@ function get_orchestrator_config
             log_error "BENCHMARK_ORCHESTRATOR_URL environment variable is required with --skip-infra"
             exit 1
         end
+
+        if test "$REUSE_ORCHESTRATOR" != true
+            orchestrator_set_meta "$ORCHESTRATOR_URL" "$API_KEY" "" "" "" "" "$S3_BUCKET" "false"
+        end
+
         log_success "Using orchestrator at: $ORCHESTRATOR_URL"
         return 0
     end
@@ -94,18 +160,6 @@ function get_orchestrator_config
     set -l tf_dir "$BENCH_DIR/infrastructure/meta"
 
     log_info "Getting orchestrator configuration from terraform..."
-
-    if test "$RESUME_META" = true
-        if test -z "$ORCHESTRATOR_URL"; and test -n "$STATUS_ORCHESTRATOR_URL"
-            set -g ORCHESTRATOR_URL "$STATUS_ORCHESTRATOR_URL"
-        end
-        if test -z "$API_KEY"; and test -n "$STATUS_API_KEY"
-            set -g API_KEY "$STATUS_API_KEY"
-        end
-        if test -z "$S3_BUCKET"; and test -n "$STATUS_S3_BUCKET_NAME"
-            set -g S3_BUCKET "$STATUS_S3_BUCKET_NAME"
-        end
-    end
 
     if test -z "$ORCHESTRATOR_URL"
         set -g ORCHESTRATOR_URL (terraform -chdir="$tf_dir" output -raw orchestrator_url 2>/dev/null)
@@ -131,30 +185,32 @@ function get_orchestrator_config
 
     set -l bastion_public_ip (terraform -chdir="$tf_dir" output -raw bastion_public_ip 2>/dev/null)
     if test -z "$bastion_public_ip"
-        set bastion_public_ip (status_get '.meta.bastion_public_ip')
+        set bastion_public_ip (orchestrator_get '.bastion_public_ip')
     end
 
     set -l orchestrator_public_ip (terraform -chdir="$tf_dir" output -raw orchestrator_public_ip 2>/dev/null)
     if test -z "$orchestrator_public_ip"
-        set orchestrator_public_ip (status_get '.meta.orchestrator_public_ip')
+        set orchestrator_public_ip (orchestrator_get '.orchestrator_public_ip')
     end
 
     set -l aws_region (terraform -chdir="$tf_dir" output -raw aws_region 2>/dev/null)
     if test -z "$aws_region"
-        set aws_region (status_get '.meta.aws_region')
+        set aws_region (orchestrator_get '.aws_region')
     end
 
     set -l key_name (terraform -chdir="$tf_dir" output -raw key_name 2>/dev/null)
     if test -z "$key_name"
-        set key_name (status_get '.meta.key_name')
+        set key_name (orchestrator_get '.key_name')
     end
 
     set -l s3_bucket_name (terraform -chdir="$tf_dir" output -raw s3_bucket_name 2>/dev/null)
     if test -z "$s3_bucket_name"
-        set s3_bucket_name (status_get '.meta.s3_bucket_name')
+        set s3_bucket_name (orchestrator_get '.s3_bucket_name')
     end
 
-    status_set_meta "$ORCHESTRATOR_URL" "$API_KEY" "$bastion_public_ip" "$orchestrator_public_ip" "$aws_region" "$key_name" "$s3_bucket_name"
+    if test "$REUSE_ORCHESTRATOR" != true
+        orchestrator_set_meta "$ORCHESTRATOR_URL" "$API_KEY" "$bastion_public_ip" "$orchestrator_public_ip" "$aws_region" "$key_name" "$s3_bucket_name" "false"
+    end
 end
 
 function orchestrator_reachable

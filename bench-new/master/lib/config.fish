@@ -7,6 +7,8 @@ function print_usage
     echo "  -p, --provider PROVIDER   Only run for specific provider (aws, azure, local)"
     echo "  --local-orchestrator      Run orchestrator locally via docker compose"
     echo "  --skip-infra              Skip terraform, use existing infrastructure"
+    echo "  --reuse-orchestrator      Reuse orchestrator from orchestrator.json"
+    echo "  --resume-run ID|latest    Resume an existing run ID"
     echo "  --mock                    Run mock benchmark instead of real benchmark"
     echo "  --debug                   Enable debug mode (verbose output, keeps task runners alive)"
     echo "  --non-interactive         Skip all interactive prompts (for CI/automation)"
@@ -46,6 +48,11 @@ function parse_args
             case --skip-infra
                 set -g SKIP_INFRA true
                 set -g CLI_SKIP_INFRA true
+            case --reuse-orchestrator
+                set -g REUSE_ORCHESTRATOR true
+            case --resume-run
+                set i (math $i + 1)
+                set -g RESUME_RUN_TARGET $argv[$i]
             case --mock
                 set -g MOCK_BENCHMARK true
                 set -g CLI_MOCK_BENCHMARK true

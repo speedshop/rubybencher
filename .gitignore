@@ -24,8 +24,13 @@ mise.local.toml
 site/public/
 
 # Runtime files
+status/
+orchestrator.json
 status.json
 *.log
+
+# Local temp
+/tmp/
 
 # Benchmark results
 results/

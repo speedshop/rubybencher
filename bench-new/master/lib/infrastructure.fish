@@ -9,8 +9,8 @@ function setup_infrastructure
         return 0
     end
 
-    if test "$RESUME_META" = true
-        log_info "Reusing existing meta infrastructure from status.json"
+    if test "$REUSE_ORCHESTRATOR" = true
+        log_info "Reusing existing meta infrastructure from orchestrator.json"
         return 0
     end
 

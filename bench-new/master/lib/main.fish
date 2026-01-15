@@ -17,6 +17,11 @@ function main
     load_config_options
     check_dependencies
 
+    if test "$CLI_RESUME_RUN" = true; and test -z "$RESUME_RUN_TARGET"
+        log_error "--resume-run requires a value (run ID or 'latest')"
+        exit 1
+    end
+
     # Show config summary
     echo ""
     log_info "Configuration ($CONFIG_FILE):"
@@ -29,15 +34,40 @@ function main
     # Initialize tmux pane tracking
     tmux_init_pane_tracking
 
+    # Load orchestrator session if requested
+    if test "$REUSE_ORCHESTRATOR" = true
+        load_orchestrator_session
+    end
+
     # Initialize API key (generate if needed for local/skip-infra modes)
     initialize_api_key
 
     # Start local orchestrator if requested (uses API_KEY)
     start_local_orchestrator
 
-    # Load status.json for auto-resume
-    enforce_status_config_match
-    maybe_resume_from_status
+    # Resolve resume target if provided
+    if test -n "$RESUME_RUN_TARGET"
+        if test "$REUSE_ORCHESTRATOR" != true
+            log_error "--resume-run requires --reuse-orchestrator"
+            exit 1
+        end
+
+        set -l resolved_run_id (resolve_resume_run_id "$RESUME_RUN_TARGET")
+        if test -z "$resolved_run_id"
+            log_error "Unable to resolve resume target: $RESUME_RUN_TARGET"
+            exit 1
+        end
+
+        if not run_status_exists "$resolved_run_id"
+            log_error "Run status file not found for run $resolved_run_id"
+            exit 1
+        end
+
+        set -g RUN_ID "$resolved_run_id"
+        set -g RESUME_RUN true
+        enforce_run_status_config_match "$RUN_ID"
+        log_info "Resuming run $RUN_ID from status files"
+    end
 
     # Setup infrastructure - spawns meta terraform in pane
     setup_infrastructure
@@ -145,7 +175,9 @@ function main
         create_run
     end
 
-    status_set_run "$RUN_ID"
+    if test "$RESUME_RUN" != true
+        run_status_set "$RUN_ID"
+    end
 
     # Start post-run providers (local)
     for provider in $post_providers
@@ -199,8 +231,18 @@ function main
     # Offer to clean up infrastructure
     echo ""
     if test "$NON_INTERACTIVE" = false
-        if gum confirm "Run nuke script to clean up infrastructure?"
-            fish "$BENCH_DIR/nuke/nuke.fish" -f
+        set -l cleanup_choice (gum choose \
+            "Everything" \
+            "Task runners for run $RUN_ID" \
+            "Nothing")
+
+        switch "$cleanup_choice"
+            case "Everything"
+                fish "$BENCH_DIR/nuke/nuke.fish" -f
+            case "Task runners for run $RUN_ID"
+                fish "$BENCH_DIR/nuke/nuke.fish" --run-id "$RUN_ID"
+            case '*'
+                log_info "Skipping cleanup"
         end
     end
 end
