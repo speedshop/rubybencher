@@ -1,7 +1,22 @@
 <div class="container mx-auto px-4 py-8" data-controller="auto-refresh" data-auto-refresh-interval-value="5000">
   <h1 class="text-4xl font-bold mb-8">Rails Bencher Orchestrator</h1>
 
-  <%= turbo_frame_tag "current_run_frame", src: current_run_frame_path, data: { auto_refresh_target: "frame" } do %>
+  <% if @runs.any? %>
+    <div class="mb-6">
+      <label class="block text-sm font-medium text-gray-700">Runs</label>
+      <div class="mt-2">
+        <select class="block w-full rounded-md border-gray-300 shadow-sm" onchange="window.location = this.value">
+          <% @runs.each do |run| %>
+            <option value="<%= root_path(run_id: run.external_id) %>" <%= "selected" if run == @run %>>
+              <%= run.external_id %> (<%= run.status %>)
+            </option>
+          <% end %>
+        </select>
+      </div>
+    </div>
+  <% end %>
+
+  <%= turbo_frame_tag "current_run_frame", src: current_run_frame_path(run_id: @run&.external_id), data: { auto_refresh_target: "frame" } do %>
     <div class="bg-gray-100 rounded-lg p-6 mb-6 animate-pulse">
       <div class="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
       <div class="grid grid-cols-2 gap-4">
@@ -11,7 +26,7 @@
     </div>
   <% end %>
 
-  <%= turbo_frame_tag "tasks_frame", src: tasks_frame_path, data: { auto_refresh_target: "frame" } do %>
+  <%= turbo_frame_tag "tasks_frame", src: tasks_frame_path(run_id: @run&.external_id), data: { auto_refresh_target: "frame" } do %>
     <div class="bg-gray-100 rounded-lg p-6 mb-6 animate-pulse">
       <div class="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
       <div class="grid grid-cols-6 gap-4 mb-4">
