@@ -2,8 +2,8 @@ ARG RUBY_VERSION=3.4
 
 FROM ruby:${RUBY_VERSION}
 
-# Install git for cloning ruby-bench and nodejs for shipit benchmark
-RUN apt-get update && apt-get install -y git nodejs npm && rm -rf /var/lib/apt/lists/*
+# Install git for cloning ruby-bench, nodejs for shipit, and libclang for commonmarker
+RUN apt-get update && apt-get install -y git nodejs npm libclang-dev clang && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
 WORKDIR /task-runner
