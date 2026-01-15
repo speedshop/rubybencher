@@ -26,12 +26,14 @@ function config_file_hash
         return 1
     end
 
+    set -l hash ""
+
     if command -q shasum
-        set -l hash (shasum -a 256 "$CONFIG_FILE" | awk '{print $1}')
+        set hash (shasum -a 256 "$CONFIG_FILE" | awk '{print $1}')
     else if command -q sha256sum
-        set -l hash (sha256sum "$CONFIG_FILE" | awk '{print $1}')
+        set hash (sha256sum "$CONFIG_FILE" | awk '{print $1}')
     else if command -q openssl
-        set -l hash (openssl dgst -sha256 "$CONFIG_FILE" | awk '{print $2}')
+        set hash (openssl dgst -sha256 "$CONFIG_FILE" | awk '{print $2}')
     else
         return 1
     end
