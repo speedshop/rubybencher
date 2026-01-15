@@ -61,26 +61,24 @@ ruby site/generate_report.rb
 
 ## Secrets (fnox + 1Password)
 
-Secrets are managed with `fnox` and loaded via `mise`:
+Secrets are managed with `fnox` (backed by 1Password):
 
 - 1Password item: `rubybencher` in the `Private` vault (see `fnox.toml`)
-- `mise.toml` loads env with `fnox export` (export prefix stripped)
+- `mise.toml` manages tools only (no automatic secret loading)
 - `fnox list` shows keys + sources, not values (by design)
 
-Usage:
+**Important**: `mise` handles tool versions. `fnox exec` loads secrets. Never use `mise exec` - it's not needed.
 
 ```fish
-# Ensure 1Password CLI is logged in
-op vault list
+# List configured secrets (no values shown)
+fnox list
 
-# Inspect configured keys (no values)
-mise exec -- fnox list
+# Verify a secret can be fetched
+fnox get ARM_SUBSCRIPTION_ID
 
-# Verify a secret can be fetched (prints the value)
-mise exec -- fnox get ARM_SUBSCRIPTION_ID
-
-# Run with secrets loaded
-mise exec -- fnox exec ./bench-new/master/run.fish -c bench-new/config/azure-single.json
+# Run anything that needs secrets
+fnox exec ./bench-new/master/run.fish -c bench-new/config/aws-full.json
+fnox exec terraform plan
 ```
 
 When adding new secrets, update the `rubybencher` 1Password item first, then reference it in `fnox.toml`. Never commit raw secrets.
