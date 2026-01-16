@@ -51,6 +51,11 @@ function ensure_tmux_session
         return 0
     end
 
+    # Skip tmux in non-interactive mode (for CI)
+    if contains -- --non-interactive $argv
+        return 0
+    end
+
     # Create session and re-run this script inside it
     set -l script_path (status --current-filename)
     set -l run_script "$SCRIPT_DIR/run.fish"

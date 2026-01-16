@@ -74,8 +74,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install fish and jq
+        run: sudo apt-get update && sudo apt-get install -y fish jq
 
       - name: Start Services
         run: ./test/orchestrator/setup.sh
