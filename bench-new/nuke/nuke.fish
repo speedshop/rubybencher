@@ -166,6 +166,11 @@ function main
             "Cleanup completed with warnings" \
             "$errors step(s) had issues"
     end
+
+    echo ""
+    log_info "Cost report (last 30 days)"
+    report_aws_costs_last_30_days
+    report_azure_costs_last_30_days
 end
 
 # Run main

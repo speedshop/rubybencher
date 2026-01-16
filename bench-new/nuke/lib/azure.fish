@@ -57,3 +57,61 @@ function cleanup_azure_resources
         end
     end
 end
+
+function report_azure_costs_last_30_days
+    if not command -q az
+        log_warning "Azure CLI not found - skipping Azure cost report"
+        return 0
+    end
+
+    if not az account show >/dev/null 2>&1
+        log_warning "Azure CLI not logged in - skipping Azure cost report"
+        return 0
+    end
+
+    set -l subscription_id (az account show --query id -o tsv 2>/dev/null)
+    if test -z "$subscription_id"
+        log_warning "Azure subscription ID not found - skipping Azure cost report"
+        return 0
+    end
+
+    set -l end_date (date -u +"%Y-%m-%d")
+    set -l start_date ""
+
+    if date -u -v -30d +"%Y-%m-%d" >/dev/null 2>&1
+        set start_date (date -u -v -30d +"%Y-%m-%d")
+    else
+        set start_date (date -u -d "30 days ago" +"%Y-%m-%d")
+    end
+
+    set -l payload (printf '{"type":"ActualCost","timeframe":"Custom","timePeriod":{"from":"%s","to":"%s"},"dataset":{"granularity":"None","aggregation":{"totalCost":{"name":"Cost","function":"Sum"}}}}' "$start_date" "$end_date")
+    set -l scope "/subscriptions/$subscription_id"
+
+    set -l row (az rest \
+        --method post \
+        --uri "https://management.azure.com${scope}/providers/Microsoft.CostManagement/query?api-version=2023-03-01" \
+        --body "$payload" \
+        --query "properties.rows[0]" \
+        -o tsv 2>/dev/null)
+
+    if test $status -ne 0; or test -z "$row"
+        log_warning "Azure cost report unavailable (Cost Management access missing)"
+        return 0
+    end
+
+    set -l fields (string split "\t" -- $row)
+    set -l total $fields[1]
+    set -l currency $fields[2]
+
+    if test -z "$total"
+        log_warning "Azure cost report unavailable (no cost data returned)"
+        return 0
+    end
+
+    if test -z "$currency"
+        set currency "USD"
+    end
+
+    set -l total_formatted (printf "%.2f" $total)
+    log_info "Azure last 30 days spend: $total_formatted $currency"
+end

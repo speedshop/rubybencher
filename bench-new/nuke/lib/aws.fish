@@ -427,3 +427,52 @@ function cleanup_aws_stragglers
     cleanup_aws_vpcs
     cleanup_aws_s3_buckets
 end
+
+function report_aws_costs_last_30_days
+    if not command -q aws
+        log_warning "AWS CLI not found - skipping AWS cost report"
+        return 0
+    end
+
+    set -l end_date (date -u +"%Y-%m-%d")
+    set -l start_date ""
+
+    if date -u -v -30d +"%Y-%m-%d" >/dev/null 2>&1
+        set start_date (date -u -v -30d +"%Y-%m-%d")
+    else
+        set start_date (date -u -d "30 days ago" +"%Y-%m-%d")
+    end
+
+    set -l amounts (aws ce get-cost-and-usage \
+        --time-period Start=$start_date,End=$end_date \
+        --granularity DAILY \
+        --metrics "UnblendedCost" \
+        --query "ResultsByTime[].Total.UnblendedCost.Amount" \
+        --output text 2>/dev/null)
+
+    if test $status -ne 0; or test -z "$amounts"
+        log_warning "AWS cost report unavailable (Cost Explorer not enabled or credentials missing)"
+        return 0
+    end
+
+    set -l total 0
+    for amount in $amounts
+        if test -n "$amount"
+            set total (math "$total + $amount")
+        end
+    end
+
+    set -l unit (aws ce get-cost-and-usage \
+        --time-period Start=$start_date,End=$end_date \
+        --granularity DAILY \
+        --metrics "UnblendedCost" \
+        --query "ResultsByTime[0].Total.UnblendedCost.Unit" \
+        --output text 2>/dev/null)
+
+    if test -z "$unit"; or test "$unit" = "None"
+        set unit "USD"
+    end
+
+    set -l total_formatted (printf "%.2f" $total)
+    log_info "AWS last 30 days spend: $total_formatted $unit (unblended)"
+end
