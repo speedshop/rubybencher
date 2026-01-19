@@ -1,0 +1,7 @@
+{
+  "ruby_version": "4.0.0",
+  "runs_per_instance_type": 3,
+  "azure": [
+    { "instance_type": "Standard_FX2ms_v2", "alias": "fx2ms-v2" }
+  ]
+}
