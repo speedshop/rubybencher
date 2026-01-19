@@ -136,7 +136,7 @@ function poll_tasks_subset -a provider instance_types_json
             break
         end
 
-        set -l tasks_response (curl -s "$ORCHESTRATOR_URL/tasks?run_id=$RUN_ID" \
+        set -l tasks_response (curl -s "$ORCHESTRATOR_URL/runs/$RUN_ID/tasks" \
             -H "Authorization: Bearer $API_KEY")
 
         set -l stats_line (echo $tasks_response | jq -r --arg provider "$provider" --argjson types "$types_json" '
@@ -148,15 +148,26 @@ function poll_tasks_subset -a provider instance_types_json
             ($t|map(select(.status=="running"))|length),
             ($t|map(select(.status=="completed"))|length),
             ($t|map(select(.status=="failed"))|length)
-          ] | @tsv')
+          ] | @tsv' 2>/dev/null)
 
-        set -l parts (string split "\t" -- $stats_line)
-        set -l total $parts[1]
-        set -l pending $parts[2]
-        set -l claimed $parts[3]
-        set -l running $parts[4]
-        set -l completed $parts[5]
-        set -l failed $parts[6]
+        set -l total 0
+        set -l pending 0
+        set -l claimed 0
+        set -l running 0
+        set -l completed 0
+        set -l failed 0
+
+        if test -n "$stats_line"
+            set -l parts (string split "\t" -- $stats_line)
+            if test (count $parts) -ge 6
+                set total $parts[1]
+                set pending $parts[2]
+                set claimed $parts[3]
+                set running $parts[4]
+                set completed $parts[5]
+                set failed $parts[6]
+            end
+        end
 
         if set -q NON_INTERACTIVE; and test "$NON_INTERACTIVE" = true
             echo "[batch] Pending: $pending | Running: "(math $claimed + $running)" | ✓ $completed | ✗ $failed"
