@@ -140,7 +140,7 @@ function poll_tasks_subset -a provider instance_types_json
             -H "Authorization: Bearer $API_KEY")
 
         set -l stats_line (echo $tasks_response | jq -r --arg provider "$provider" --argjson types "$types_json" '
-          [ .tasks[] | select(.provider == $provider and ($types | index(.instance_type))) ] as $t |
+          [ .tasks[] | select(.provider == $provider and (.instance_type | IN($types[]))) ] as $t |
           [
             ($t|length),
             ($t|map(select(.status=="pending"))|length),
