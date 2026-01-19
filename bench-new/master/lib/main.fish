@@ -173,6 +173,13 @@ function main
                         end
                     end
 
+                    set -l azure_batches (azure_batches_for_config)
+                    if test (count $azure_batches) -gt 0
+                        set -g AZURE_BATCHES $azure_batches
+                        log_warning "Deferring Azure provisioning until after run creation"
+                        continue
+                    end
+
                     if prepare_azure_task_runners
                         set -l tf_dir (get_azure_terraform_dir)
                         set -l tf_cmd terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
@@ -240,6 +247,10 @@ function main
             end
             log_success "$provider task runner setup completed"
         end
+    end
+
+    if set -q AZURE_BATCHES; and test (count $AZURE_BATCHES) -gt 0
+        azure_run_batches $AZURE_BATCHES
     end
 
     # Monitor progress

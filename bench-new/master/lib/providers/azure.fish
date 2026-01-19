@@ -10,11 +10,153 @@ function get_azure_vcpu_count
     end
 end
 
+function azure_effective_region
+    set -l azure_region "northcentralus"
+    if set -q AZURE_REGION
+        set azure_region "$AZURE_REGION"
+    end
+
+    echo $azure_region
+end
+
+function azure_available_core_quota -a azure_region
+    if not command -q az
+        return 1
+    end
+
+    set -l usage (az vm list-usage -l $azure_region --query "[?name.value=='cores'].[limit,currentValue]" -o tsv 2>/dev/null)
+    if test -z "$usage"
+        return 1
+    end
+
+    set -l parts (string split "\t" -- $usage)
+    if test (count $parts) -lt 2
+        set parts (string split " " -- $usage)
+    end
+
+    if test (count $parts) -lt 2
+        return 1
+    end
+
+    set -l limit $parts[1]
+    set -l current $parts[2]
+
+    echo (math "$limit - $current")
+end
+
+function azure_total_cores_required -a instance_types_json min_runners runner_cap
+    set -l count (echo $instance_types_json | jq -r 'length')
+    set -l total 0
+
+    for i in (seq 0 (math $count - 1))
+        set -l instance_type (echo $instance_types_json | jq -r ".[$i].instance_type")
+        set -l vcpu (get_azure_vcpu_count $instance_type)
+        set -l effective_vcpu $vcpu
+
+        if test -n "$runner_cap"; and test "$runner_cap" != "null"
+            if test $runner_cap -lt $effective_vcpu
+                set effective_vcpu $runner_cap
+            end
+        end
+
+        if test $effective_vcpu -lt 1
+            set effective_vcpu 1
+        end
+
+        set -l instances_needed (math "ceil($min_runners / $effective_vcpu)")
+        set -l cores_needed (math "$vcpu * $instances_needed")
+        set total (math "$total + $cores_needed")
+    end
+
+    echo $total
+end
+
+function azure_batched_instance_types_json -a instance_types_json min_runners runner_cap available_cores
+    set -l count (echo $instance_types_json | jq -r 'length')
+
+    set -l current_batch_items
+    set -l current_batch_cores 0
+
+    for i in (seq 0 (math $count - 1))
+        set -l item_json (echo $instance_types_json | jq -c ".[$i]")
+        set -l instance_type (echo $instance_types_json | jq -r ".[$i].instance_type")
+        set -l vcpu (get_azure_vcpu_count $instance_type)
+        set -l effective_vcpu $vcpu
+
+        if test -n "$runner_cap"; and test "$runner_cap" != "null"
+            if test $runner_cap -lt $effective_vcpu
+                set effective_vcpu $runner_cap
+            end
+        end
+
+        if test $effective_vcpu -lt 1
+            set effective_vcpu 1
+        end
+
+        set -l instances_needed (math "ceil($min_runners / $effective_vcpu)")
+        set -l item_cores (math "$vcpu * $instances_needed")
+
+        if test $item_cores -gt $available_cores
+            log_error "Azure quota too low to provision $instance_type (needs $item_cores cores, have $available_cores)"
+            exit 1
+        end
+
+        if test (count $current_batch_items) -eq 0
+            set current_batch_items $item_json
+            set current_batch_cores $item_cores
+            continue
+        end
+
+        if test (math "$current_batch_cores + $item_cores") -gt $available_cores
+            echo "["(string join ',' $current_batch_items)"]"
+            set current_batch_items $item_json
+            set current_batch_cores $item_cores
+        else
+            set current_batch_items $current_batch_items $item_json
+            set current_batch_cores (math "$current_batch_cores + $item_cores")
+        end
+    end
+
+    if test (count $current_batch_items) -gt 0
+        echo "["(string join ',' $current_batch_items)"]"
+    end
+end
+
+function azure_batches_for_config
+    set -l instance_types_json (cat "$CONFIG_FILE" | jq -c '.azure // []')
+    if test "$instance_types_json" = "[]"
+        return
+    end
+
+    set -l min_runners (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
+    set -l runner_cap (get_task_runner_cap "azure")
+    set -l azure_region (azure_effective_region)
+
+    set -l available_cores (azure_available_core_quota $azure_region)
+    if test -z "$available_cores"
+        return
+    end
+
+    set -l required_cores (azure_total_cores_required $instance_types_json $min_runners $runner_cap)
+
+    if test $required_cores -le $available_cores
+        return
+    end
+
+    log_warning "Azure core quota in $azure_region is $available_cores, but this run needs $required_cores; batching provisioning"
+
+    azure_batched_instance_types_json $instance_types_json $min_runners $runner_cap $available_cores
+end
+
 function prepare_azure_task_runners
     # Prepare Azure task runners: validation, config building, terraform init
     # Returns 0 if ready to proceed, 1 if nothing to do
-    set -l azure_instances (cat "$CONFIG_FILE" | jq -r '.azure // empty')
-    if test -z "$azure_instances"; or test "$azure_instances" = "null"
+    set -l instance_types_json $argv[1]
+    if test -z "$instance_types_json"
+        set instance_types_json (cat "$CONFIG_FILE" | jq -c '.azure // []')
+    end
+
+    if test -z "$instance_types_json"; or test "$instance_types_json" = "null"; or test "$instance_types_json" = "[]"
         return 1
     end
 
@@ -50,10 +192,7 @@ function prepare_azure_task_runners
 
     # Get configuration values
     set -l ruby_version (cat "$CONFIG_FILE" | jq -r '.ruby_version')
-    set -l azure_region "northcentralus"
-    if set -q AZURE_REGION
-        set azure_region "$AZURE_REGION"
-    end
+    set -l azure_region (azure_effective_region)
 
     set -l admin_username "azureuser"
     if set -q AZURE_ADMIN_USERNAME
@@ -110,8 +249,7 @@ function prepare_azure_task_runners
     end
     set ssh_public_key (string trim -- $ssh_public_key)
 
-    # Build instance types JSON
-    set -l instance_types_json (cat "$CONFIG_FILE" | jq -c '.azure')
+    set -l instance_types_count (echo $instance_types_json | jq -r 'length')
 
     # Get the number of runs per instance type
     set -l min_runners (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
@@ -123,9 +261,9 @@ function prepare_azure_task_runners
     set -l vcpu_map "{"
     set -l instance_count_map "{"
     set -l first true
-    for i in (seq 0 (math (cat "$CONFIG_FILE" | jq '.azure | length') - 1))
-        set -l alias_name (cat "$CONFIG_FILE" | jq -r ".azure[$i].alias")
-        set -l instance_type (cat "$CONFIG_FILE" | jq -r ".azure[$i].instance_type")
+    for i in (seq 0 (math $instance_types_count - 1))
+        set -l alias_name (echo $instance_types_json | jq -r ".[$i].alias")
+        set -l instance_type (echo $instance_types_json | jq -r ".[$i].instance_type")
         set -l vcpu (get_azure_vcpu_count $instance_type)
         set -l effective_vcpu $vcpu
 
@@ -285,6 +423,42 @@ function update_azure_status
         --arg resource_group "$resource_group" \
         --argjson instance_ids "$instance_ids" \
         --argjson public_ips "$public_ips"
+end
+
+function azure_run_batches
+    set -l batches $argv
+    set -l total_batches (count $batches)
+    set -l tf_dir "$BENCH_DIR/infrastructure/azure"
+
+    for idx in (seq 1 $total_batches)
+        set -l batch_json $batches[$idx]
+        log_info "Azure batch $idx/$total_batches: provisioning task runners..."
+
+        if not prepare_azure_task_runners $batch_json
+            log_error "No Azure instance types configured for batch"
+            exit 1
+        end
+
+        terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
+        if test $status -ne 0
+            log_error "azure terraform failed"
+            exit 1
+        end
+
+        finalize_azure_task_runners
+        update_azure_status
+
+        poll_tasks_subset azure $batch_json
+
+        if test "$DEBUG" != true
+            log_info "Azure batch $idx/$total_batches: destroying task runners..."
+            terraform -chdir="$tf_dir" destroy -auto-approve -parallelism=30
+            if test $status -ne 0
+                log_error "azure terraform destroy failed"
+                exit 1
+            end
+        end
+    end
 end
 
 function setup_azure_task_runners
