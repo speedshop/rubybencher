@@ -54,6 +54,13 @@ git clone --depth 1 https://github.com/speedshop/rubybencher.git repo
 cd repo/bench-new/task-runner
 
 # Build the task runner Docker image
+# Ruby 4 images ship with newer Bundler which rejects `bundle install --without`.
+# Patch the Dockerfile in-place before building.
+if grep -q "bundle install --without test" Dockerfile; then
+    echo "Patching task-runner Dockerfile for Bundler compatibility..."
+    sed -i "s|RUN bundle install --without test|RUN bundle config set without 'test' && bundle install|" Dockerfile
+fi
+
 echo "Building task runner Docker image for Ruby $RUBY_VERSION..."
 docker build -t task-runner:$RUBY_VERSION --build-arg RUBY_VERSION=$RUBY_VERSION .
 
