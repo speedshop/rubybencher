@@ -127,8 +127,11 @@ function prepare_aws_task_runners
 
     # Initialize terraform if needed
     if not test -d "$AWS_TF_DIR/.terraform"
-        gum spin --spinner dot --title "Initializing AWS task runner Terraform..." -- \
-            terraform -chdir="$AWS_TF_DIR" init
+        run_with_spinner "Initializing AWS task runner Terraform..." terraform -chdir="$AWS_TF_DIR" init
+        if test $status -ne 0
+            log_error "AWS terraform init failed"
+            exit 1
+        end
     end
 
     # Create tfvars file for this run

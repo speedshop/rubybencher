@@ -18,22 +18,12 @@ function provider_in_config
     return 1
 end
 
-function provider_selected
-    set -l provider $argv[1]
-
-    if test -n "$PROVIDER_FILTER"
-        test "$PROVIDER_FILTER" = "$provider"
-        return $status
-    end
-
-    return 0
-end
 
 function configured_providers
     set -l providers
 
     for provider in (provider_list)
-        if provider_in_config $provider; and provider_selected $provider
+        if provider_in_config $provider
             set providers $providers $provider
         end
     end

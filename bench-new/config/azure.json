@@ -1,0 +1,34 @@
+{
+  "ruby_version": "4.0.0",
+  "runs_per_instance_type": 3,
+  "azure": [
+    {
+      "instance_type": "Standard_D2pls_v6",
+      "alias": "d2pls-v6"
+    },
+    {
+      "instance_type": "Standard_D2plds_v6",
+      "alias": "d2plds-v6"
+    },
+    {
+      "instance_type": "Standard_D2als_v6",
+      "alias": "d2als-v6"
+    },
+    {
+      "instance_type": "Standard_D2ls_v6",
+      "alias": "d2ls-v6"
+    },
+    {
+      "instance_type": "Standard_FX2ms_v2",
+      "alias": "fx2ms-v2"
+    },
+    {
+      "instance_type": "Standard_F2als_v6",
+      "alias": "f2als-v6"
+    },
+    {
+      "instance_type": "Standard_D2pls_v5",
+      "alias": "d2pls-v5"
+    }
+  ]
+}

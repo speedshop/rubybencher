@@ -1,7 +1,7 @@
 variable "azure_region" {
   description = "Azure region to deploy to"
   type        = string
-  default     = "eastus"
+  default     = "northcentralus"
 }
 
 variable "run_id" {

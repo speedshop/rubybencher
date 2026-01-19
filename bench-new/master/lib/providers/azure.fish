@@ -50,7 +50,7 @@ function prepare_azure_task_runners
 
     # Get configuration values
     set -l ruby_version (cat "$CONFIG_FILE" | jq -r '.ruby_version')
-    set -l azure_region "eastus"
+    set -l azure_region "northcentralus"
     if set -q AZURE_REGION
         set azure_region "$AZURE_REGION"
     end
@@ -166,8 +166,11 @@ function prepare_azure_task_runners
 
     # Initialize terraform if needed
     if not test -d "$AZURE_TF_DIR/.terraform"
-        gum spin --spinner dot --title "Initializing Azure task runner Terraform..." -- \
-            terraform -chdir="$AZURE_TF_DIR" init
+        run_with_spinner "Initializing Azure task runner Terraform..." terraform -chdir="$AZURE_TF_DIR" init
+        if test $status -ne 0
+            log_error "Azure terraform init failed"
+            exit 1
+        end
     end
 
     # Create tfvars file for this run

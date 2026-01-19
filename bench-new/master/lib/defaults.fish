@@ -1,5 +1,4 @@
 set -g CONFIG_FILE ""
-set -g PROVIDER_FILTER ""
 set -g LOCAL_ORCHESTRATOR false
 set -g SKIP_INFRA false
 set -g DEBUG false

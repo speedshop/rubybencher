@@ -48,15 +48,32 @@ function setup_infrastructure
         exit 1
     end
 
-    # Initialize terraform if needed (do this in main pane before spawning)
+    # Initialize terraform if needed
     if not test -d "$tf_dir/.terraform"
-        gum spin --spinner dot --title "Initializing meta Terraform..." -- \
-            terraform -chdir="$tf_dir" init
+        run_with_spinner "Initializing meta Terraform..." terraform -chdir="$tf_dir" init
+        if test $status -ne 0
+            log_error "Meta terraform init failed"
+            exit 1
+        end
     end
 
-    # Spawn terraform apply in a separate pane
-    set -l tf_cmd "terraform -chdir='$tf_dir' apply -auto-approve -parallelism=30"
-    set -g META_TF_PANE_ID (tmux_spawn_pane "Meta Infrastructure (Orchestrator)" "$tf_cmd")
+    set -l tf_cmd terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
+
+    # In non-interactive mode (or outside tmux), run terraform in the foreground.
+    if set -q NON_INTERACTIVE; and test "$NON_INTERACTIVE" = true
+        log_info "Running meta terraform apply..."
+        $tf_cmd
+        if test $status -ne 0
+            log_error "Meta infrastructure terraform failed"
+            exit 1
+        end
+        set -g META_TF_PANE_ID ""
+        log_success "Meta infrastructure ready"
+        return 0
+    end
+
+    # Interactive mode: spawn terraform apply in a separate tmux pane
+    set -g META_TF_PANE_ID (tmux_spawn_pane "Meta Infrastructure (Orchestrator)" (string join ' ' $tf_cmd))
     log_info "Meta terraform running in pane..."
 end
 

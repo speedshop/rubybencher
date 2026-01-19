@@ -26,8 +26,7 @@ function start_local_orchestrator
 
     # Start the stack with the API key
     log_info "Using API key: $API_KEY"
-    gum spin --spinner dot --title "Starting docker compose stack..." -- \
-        env API_KEY="$API_KEY" docker compose -f "$orchestrator_dir/docker-compose.yml" up -d --build
+    run_with_spinner "Starting docker compose stack..." env API_KEY="$API_KEY" docker compose -f "$orchestrator_dir/docker-compose.yml" up -d --build
 
     if test $status -ne 0
         log_error "Failed to start docker compose stack"
@@ -237,11 +236,15 @@ function wait_for_orchestrator
         if test "$response" = "200"
             log_success "Orchestrator is ready"
             log_info "Orchestrator URL: $ORCHESTRATOR_URL"
-            open "$ORCHESTRATOR_URL"
+            if not set -q NON_INTERACTIVE; or test "$NON_INTERACTIVE" != true
+                if command -q open
+                    open "$ORCHESTRATOR_URL"
+                end
+            end
             return 0
         end
 
-        gum spin --spinner dot --title "Waiting for orchestrator (attempt $attempt/$max_attempts)..." -- sleep 5
+        run_with_spinner "Waiting for orchestrator (attempt $attempt/$max_attempts)..." sleep 5
         set attempt (math $attempt + 1)
     end
 

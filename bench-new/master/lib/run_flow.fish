@@ -1,7 +1,7 @@
 function create_run
     log_info "Creating benchmark run..."
 
-    set -l config_json (filter_config_for_provider)
+    set -l config_json (cat "$CONFIG_FILE")
 
     # Add the pre-generated run_id to the config
     set -l config_with_run_id (echo $config_json | jq --arg run_id "$RUN_ID" '. + {run_id: $run_id}')
@@ -75,7 +75,41 @@ function poll_run_status
     while true
         set -l response (curl -s "$ORCHESTRATOR_URL/runs/$RUN_ID" \
             -H "Authorization: Bearer $API_KEY")
-        set -l run_status (echo $response | jq -r '.status')
+
+        set -l run_status (echo $response | jq -r '.status // "unknown"')
+        set -l total (echo $response | jq -r '.tasks.total // 0')
+        set -l pending (echo $response | jq -r '.tasks.pending // 0')
+        set -l claimed (echo $response | jq -r '.tasks.claimed // 0')
+        set -l running (echo $response | jq -r '.tasks.running // 0')
+        set -l completed (echo $response | jq -r '.tasks.completed // 0')
+        set -l failed (echo $response | jq -r '.tasks.failed // 0')
+
+        # Update status file for monitoring/automation
+        set -l now (date -u +"%Y-%m-%dT%H:%M:%SZ")
+        run_status_update \
+            '.updated_at = $updated_at |
+             .orchestrator_url = $orchestrator_url |
+             .run = { status: $status, tasks: { total: $total, pending: $pending, claimed: $claimed, running: $running, completed: $completed, failed: $failed } }' \
+            --arg updated_at "$now" \
+            --arg orchestrator_url "$ORCHESTRATOR_URL" \
+            --arg status "$run_status" \
+            --argjson total $total \
+            --argjson pending $pending \
+            --argjson claimed $claimed \
+            --argjson running $running \
+            --argjson completed $completed \
+            --argjson failed $failed
+
+        # Emit a stable, single-line progress status in non-interactive mode
+        if set -q NON_INTERACTIVE; and test "$NON_INTERACTIVE" = true
+            set -l done_count (math $completed + $failed)
+            set -l progress 0
+            if test $total -gt 0
+                set progress (math "round($done_count * 100 / $total)")
+            end
+
+            echo "[$progress%] Pending: $pending | Running: "(math $claimed + $running)" | ✓ $completed | ✗ $failed"
+        end
 
         if test "$run_status" = "completed"; or test "$run_status" = "cancelled"
             log_success "Run $run_status"

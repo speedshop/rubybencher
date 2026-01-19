@@ -4,14 +4,14 @@ function print_usage
     echo "Options:"
     echo "  -c, --config FILE         Config file path (required)"
     echo "  -k, --api-key KEY         API key (generated randomly if not provided)"
-    echo "  -p, --provider PROVIDER   Only run for specific provider (aws, azure, local)"
+
     echo "  --local-orchestrator      Run orchestrator locally via docker compose"
     echo "  --skip-infra              Skip terraform, use existing infrastructure"
     echo "  --reuse-orchestrator      Reuse orchestrator from orchestrator.json"
     echo "  --resume-run ID|latest    Resume an existing run ID"
     echo "  --mock                    Run mock benchmark instead of real benchmark"
     echo "  --debug                   Enable debug mode (verbose output, keeps task runners alive)"
-    echo "  --non-interactive         Skip all interactive prompts (for CI/automation)"
+    echo "  --non-interactive         No tmux/prompts; prints JSON summary"
     echo "  -h, --help                Show this help"
     echo ""
     echo "Environment Variables:"
@@ -39,9 +39,7 @@ function parse_args
                 set i (math $i + 1)
                 set -g API_KEY $argv[$i]
                 set -g CLI_API_KEY true
-            case -p --provider
-                set i (math $i + 1)
-                set -g PROVIDER_FILTER $argv[$i]
+
             case --local-orchestrator
                 set -g LOCAL_ORCHESTRATOR true
                 set -g CLI_LOCAL_ORCHESTRATOR true
@@ -203,20 +201,4 @@ function get_task_runner_cap
     end
 end
 
-function filter_config_for_provider
-    set -l config_content (cat "$CONFIG_FILE")
 
-    if test -n "$PROVIDER_FILTER"
-        # Create filtered config with only the specified provider
-        set -l filtered (echo $config_content | jq --arg provider "$PROVIDER_FILTER" '{
-            ruby_version: .ruby_version,
-            runs_per_instance_type: .runs_per_instance_type,
-            task_runners: .task_runners,
-            ($provider): .[$provider]
-        } | with_entries(select(.value != null))')
-
-        echo $filtered
-    else
-        echo $config_content
-    end
-end

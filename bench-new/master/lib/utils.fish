@@ -13,3 +13,15 @@ function generate_run_id
     set -l random_digits (printf "%08d" (math (random) % 100000000))
     echo "$timestamp$random_digits"
 end
+
+function run_with_spinner
+    set -l title $argv[1]
+    set -l cmd $argv[2..-1]
+
+    if set -q NON_INTERACTIVE; and test "$NON_INTERACTIVE" = true
+        $cmd
+        return $status
+    end
+
+    gum spin --spinner dot --title "$title" -- $cmd
+end
