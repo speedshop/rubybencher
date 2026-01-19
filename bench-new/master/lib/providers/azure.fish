@@ -24,7 +24,12 @@ function azure_available_core_quota -a azure_region
         return 1
     end
 
-    set -l usage (az vm list-usage -l $azure_region --query "[?name.value=='cores'].[limit,currentValue]" -o tsv 2>/dev/null)
+    set -l subscription_args
+    if set -q ARM_SUBSCRIPTION_ID; and test -n "$ARM_SUBSCRIPTION_ID"
+        set subscription_args --subscription "$ARM_SUBSCRIPTION_ID"
+    end
+
+    set -l usage (az vm list-usage -l $azure_region $subscription_args --query "[?name.value=='cores'].[limit,currentValue]" -o tsv 2>/dev/null)
     if test -z "$usage"
         return 1
     end
@@ -134,7 +139,8 @@ function azure_batches_for_config
 
     set -l available_cores (azure_available_core_quota $azure_region)
     if test -z "$available_cores"
-        return
+        set available_cores 10
+        log_warning "Unable to query Azure core quota in $azure_region; assuming $available_cores cores available"
     end
 
     set -l required_cores (azure_total_cores_required $instance_types_json $min_runners $runner_cap)
