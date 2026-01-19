@@ -120,6 +120,58 @@ function poll_run_status
     end
 end
 
+function poll_tasks_subset -a provider instance_types_json
+    log_info "Waiting for $provider batch tasks to complete..."
+
+    set -l poll_interval 10
+    set -l types_json (echo $instance_types_json | jq -c '[.[].instance_type]')
+
+    while true
+        set -l run_response (curl -s "$ORCHESTRATOR_URL/runs/$RUN_ID" \
+            -H "Authorization: Bearer $API_KEY")
+
+        set -l run_status (echo $run_response | jq -r '.status // "unknown"')
+        if test "$run_status" = "completed"; or test "$run_status" = "cancelled"
+            log_success "Run $run_status"
+            break
+        end
+
+        set -l tasks_response (curl -s "$ORCHESTRATOR_URL/tasks?run_id=$RUN_ID" \
+            -H "Authorization: Bearer $API_KEY")
+
+        set -l stats_line (echo $tasks_response | jq -r --arg provider "$provider" --argjson types "$types_json" '
+          [ .tasks[] | select(.provider == $provider and ($types | index(.instance_type))) ] as $t |
+          [
+            ($t|length),
+            ($t|map(select(.status=="pending"))|length),
+            ($t|map(select(.status=="claimed"))|length),
+            ($t|map(select(.status=="running"))|length),
+            ($t|map(select(.status=="completed"))|length),
+            ($t|map(select(.status=="failed"))|length)
+          ] | @tsv')
+
+        set -l parts (string split "\t" -- $stats_line)
+        set -l total $parts[1]
+        set -l pending $parts[2]
+        set -l claimed $parts[3]
+        set -l running $parts[4]
+        set -l completed $parts[5]
+        set -l failed $parts[6]
+
+        if set -q NON_INTERACTIVE; and test "$NON_INTERACTIVE" = true
+            echo "[batch] Pending: $pending | Running: "(math $claimed + $running)" | ✓ $completed | ✗ $failed"
+        end
+
+        set -l incomplete (math $pending + $claimed + $running)
+        if test $incomplete -eq 0
+            log_success "Batch tasks complete ($completed completed, $failed failed)"
+            break
+        end
+
+        sleep $poll_interval
+    end
+end
+
 function download_results
     log_info "Downloading results..."
 
