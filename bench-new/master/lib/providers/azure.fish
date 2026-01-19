@@ -102,7 +102,7 @@ function azure_batched_instance_types_json -a instance_types_json min_runners ru
         set -l item_cores (math "$vcpu * $instances_needed")
 
         if test $item_cores -gt $available_cores
-            log_error "Azure quota too low to provision $instance_type (needs $item_cores cores, have $available_cores)"
+            log_error "Azure quota too low to provision $instance_type (needs $item_cores cores, have $available_cores)" >&2
             exit 1
         end
 
@@ -135,12 +135,16 @@ function azure_batches_for_config
 
     set -l min_runners (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
     set -l runner_cap (get_task_runner_cap "azure")
+    if test -z "$runner_cap"
+        set runner_cap "null"
+    end
+
     set -l azure_region (azure_effective_region)
 
     set -l available_cores (azure_available_core_quota $azure_region)
     if test -z "$available_cores"
         set available_cores 10
-        log_warning "Unable to query Azure core quota in $azure_region; assuming $available_cores cores available"
+        log_warning "Unable to query Azure core quota in $azure_region; assuming $available_cores cores available" >&2
     end
 
     set -l required_cores (azure_total_cores_required $instance_types_json $min_runners $runner_cap)
@@ -149,7 +153,7 @@ function azure_batches_for_config
         return
     end
 
-    log_warning "Azure core quota in $azure_region is $available_cores, but this run needs $required_cores; batching provisioning"
+    log_warning "Azure core quota in $azure_region is $available_cores, but this run needs $required_cores; batching provisioning" >&2
 
     azure_batched_instance_types_json $instance_types_json $min_runners $runner_cap $available_cores
 end
