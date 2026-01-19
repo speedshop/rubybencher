@@ -149,7 +149,7 @@ resource "azurerm_linux_virtual_machine" "task_runner" {
   source_image_reference {
     publisher = "Canonical"
     offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts"
+    sku       = strcontains(each.value.instance_type, "pls") || strcontains(each.value.instance_type, "plds") ? "22_04-lts-arm64" : "22_04-lts-gen2"
     version   = "latest"
   }
 
