@@ -162,13 +162,6 @@ function main
                     end
 
                 case azure
-                    set -l azure_batches (azure_batches_for_config)
-                    if test (count $azure_batches) -gt 0
-                        set -g AZURE_BATCHES $azure_batches
-                        log_warning "Deferring Azure provisioning to batch loop"
-                        continue
-                    end
-
                     if azure_task_runners_exist
                         if azure_run_id_matches "$RUN_ID"
                             log_info "Azure task runners already exist for run $RUN_ID; skipping apply"
@@ -249,9 +242,6 @@ function main
         end
     end
 
-    if set -q AZURE_BATCHES; and test (count $AZURE_BATCHES) -gt 0
-        azure_run_batches $AZURE_BATCHES
-    end
 
     # Monitor progress
     poll_run_status
