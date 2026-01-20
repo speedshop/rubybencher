@@ -133,8 +133,7 @@ jobs:
           fish bench-new/master/run.fish \
             -c bench-new/config/local.json \
             --local-orchestrator \
-            --mock \
-            --non-interactive
+            --mock
 
       - name: Verify Results
         run: |
