@@ -19,6 +19,7 @@ variable "instance_types" {
   type = list(object({
     instance_type = string
     alias         = string
+    arch          = optional(string, "amd64")
   }))
 }
 

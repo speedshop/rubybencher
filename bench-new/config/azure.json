@@ -4,31 +4,38 @@
   "azure": [
     {
       "instance_type": "Standard_D2pls_v6",
-      "alias": "d2pls-v6"
+      "alias": "d2pls-v6",
+      "arch": "arm64"
     },
     {
       "instance_type": "Standard_D2plds_v6",
-      "alias": "d2plds-v6"
+      "alias": "d2plds-v6",
+      "arch": "arm64"
     },
     {
       "instance_type": "Standard_D2als_v6",
-      "alias": "d2als-v6"
+      "alias": "d2als-v6",
+      "arch": "amd64"
     },
     {
       "instance_type": "Standard_D2ls_v6",
-      "alias": "d2ls-v6"
+      "alias": "d2ls-v6",
+      "arch": "amd64"
     },
     {
       "instance_type": "Standard_FX2ms_v2",
-      "alias": "fx2ms-v2"
+      "alias": "fx2ms-v2",
+      "arch": "amd64"
     },
     {
       "instance_type": "Standard_F2als_v6",
-      "alias": "f2als-v6"
+      "alias": "f2als-v6",
+      "arch": "amd64"
     },
     {
       "instance_type": "Standard_D2pls_v5",
-      "alias": "d2pls-v5"
+      "alias": "d2pls-v5",
+      "arch": "arm64"
     }
   ]
 }
