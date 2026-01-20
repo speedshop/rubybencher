@@ -147,8 +147,7 @@ end
 function get_task_runner_count
     # Get the number of task runners to start for a given provider
     # Supports (in priority order):
-    #   aws.task_runners.count: 3          (provider object, new style)
-    #   task_runners.count.aws: 3          (global object with provider keys, old style)
+    #   aws.task_runners.count: 3          (provider object)
     #   task_runners.count: 3              (global default)
     # Defaults to 1 if not specified
     set -l provider $argv[1]
@@ -160,15 +159,8 @@ function get_task_runner_count
         return
     end
 
-    # Then check for global object style: task_runners.count.aws
-    set -l global_obj_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .task_runners.count | type == "object" then .task_runners.count[$p] // empty else empty end')
-    if test -n "$global_obj_count"; and test "$global_obj_count" != "null"
-        echo $global_obj_count
-        return
-    end
-
     # Then check for global number: task_runners.count
-    set -l global_count (cat "$CONFIG_FILE" | jq -r 'if .task_runners.count | type == "number" then .task_runners.count else empty end')
+    set -l global_count (cat "$CONFIG_FILE" | jq -r '.task_runners.count // empty')
     if test -n "$global_count"; and test "$global_count" != "null"
         echo $global_count
         return
@@ -191,15 +183,8 @@ function get_task_runner_cap
         return
     end
 
-    # Then check for global object style: task_runners.count.aws
-    set -l global_obj_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .task_runners.count | type == "object" then .task_runners.count[$p] // empty else empty end')
-    if test -n "$global_obj_count"; and test "$global_obj_count" != "null"
-        echo $global_obj_count
-        return
-    end
-
-    # Then check for global number: task_runners.count
-    set -l global_count (cat "$CONFIG_FILE" | jq -r 'if .task_runners.count | type == "number" then .task_runners.count else empty end')
+    # Then check for global: task_runners.count
+    set -l global_count (cat "$CONFIG_FILE" | jq -r '.task_runners.count // empty')
     if test -n "$global_count"; and test "$global_count" != "null"
         echo $global_count
         return
