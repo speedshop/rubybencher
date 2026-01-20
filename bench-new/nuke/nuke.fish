@@ -8,8 +8,9 @@ set -g BENCH_DIR (dirname $SCRIPT_DIR)
 set -g LIB_DIR "$SCRIPT_DIR/lib"
 
 # Options
-set -g FORCE false
+set -g FORCE true
 set -g TARGET_RUN_ID ""
+set -g PROVIDERS_ONLY false
 
 source "$LIB_DIR/logging.fish"
 source "$LIB_DIR/usage.fish"
@@ -26,12 +27,34 @@ function confirm_destruction
     end
 
     set -l scope "ALL rb_managed resources"
-    if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
+    if test "$PROVIDERS_ONLY" = true
+        set scope "Provider infrastructure only (AWS/Azure)"
+    else if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
         set scope "run ID: $TARGET_RUN_ID"
     end
 
     echo ""
-    if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
+    if test "$PROVIDERS_ONLY" = true
+        gum style \
+            --border double \
+            --border-foreground 196 \
+            --align center \
+            --width 60 \
+            --padding "1" \
+            --foreground 196 \
+            "WARNING: DESTRUCTIVE OPERATION" \
+            "" \
+            "Target: $scope" \
+            "" \
+            "This will destroy:" \
+            "• AWS infrastructure (EC2 instances)" \
+            "• Azure infrastructure (VMs)" \
+            "• Provider terraform state" \
+            "" \
+            "Orchestrator/meta infrastructure will be preserved." \
+            "" \
+            "This action cannot be undone!"
+    else if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
         gum style \
             --border double \
             --border-foreground 196 \
@@ -74,8 +97,8 @@ function confirm_destruction
         exit 0
     end
 
-    # Double confirmation only for full cleanup (not targeted)
-    if test -z "$TARGET_RUN_ID"
+    # Double confirmation only for full cleanup (not targeted or providers-only)
+    if test -z "$TARGET_RUN_ID"; and test "$PROVIDERS_ONLY" != true
         echo ""
         set -l confirm_text (gum input --placeholder "Type 'destroy' to confirm FULL cleanup")
 
@@ -102,7 +125,9 @@ function main
         "NUKE Script"
 
     # Show mode
-    if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
+    if test "$PROVIDERS_ONLY" = true
+        log_info "Mode: Providers-only (AWS/Azure task runners)"
+    else if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
         log_info "Mode: Targeted cleanup (run_id: $TARGET_RUN_ID)"
     else
         log_info "Mode: Full cleanup (ALL rb_managed resources)"
@@ -119,7 +144,11 @@ function main
     set -l errors 0
 
     # Terraform-managed resources
-    if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
+    if test "$PROVIDERS_ONLY" = true
+        # Providers-only mode: destroy only AWS/Azure terraform
+        destroy_terraform_providers_only
+        or set errors (math $errors + 1)
+    else if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
         # Targeted mode: only destroy matching terraform state
         destroy_terraform_for_run "$TARGET_RUN_ID"
         or set errors (math $errors + 1)
@@ -130,14 +159,17 @@ function main
     end
 
     # Tag-based cloud resource cleanup (handles stragglers)
-    cleanup_aws_stragglers
-    or set errors (math $errors + 1)
+    # Skip manual cleanup in providers-only mode (terraform handles it)
+    if test "$PROVIDERS_ONLY" != true
+        cleanup_aws_stragglers
+        or set errors (math $errors + 1)
 
-    cleanup_azure_resources
-    or set errors (math $errors + 1)
+        cleanup_azure_resources
+        or set errors (math $errors + 1)
+    end
 
     # Local cleanup only in full mode
-    if test -z "$TARGET_RUN_ID"
+    if test -z "$TARGET_RUN_ID"; and test "$PROVIDERS_ONLY" != true
         cleanup_local_containers
         or set errors (math $errors + 1)
 

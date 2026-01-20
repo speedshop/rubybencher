@@ -2,6 +2,7 @@ require "test_helper"
 
 class RunTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
+
   test "creates run with external_id" do
     run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
 

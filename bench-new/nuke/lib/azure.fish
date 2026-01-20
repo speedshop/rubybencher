@@ -89,7 +89,7 @@ function report_azure_costs_last_30_days
 
     set -l row (az rest \
         --method post \
-        --uri "https://management.azure.com${scope}/providers/Microsoft.CostManagement/query?api-version=2023-03-01" \
+        --uri "https://management.azure.com$scope/providers/Microsoft.CostManagement/query?api-version=2023-03-01" \
         --body "$payload" \
         --query "properties.rows[0]" \
         -o tsv 2>/dev/null)

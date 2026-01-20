@@ -2,7 +2,7 @@ class RunsController < ApplicationController
   include ApiAuthentication
 
   skip_before_action :verify_authenticity_token
-  skip_before_action :authenticate_api_request!, only: [:index, :show]
+  skip_before_action :authenticate_api_request!, only: [ :index, :show ]
   before_action :set_default_format
 
   def index
@@ -13,7 +13,7 @@ class RunsController < ApplicationController
     instance_types = parse_instance_types(params)
 
     if instance_types.empty?
-      render json: { error: 'At least one instance type must be specified' }, status: :bad_request
+      render json: { error: "At least one instance type must be specified" }, status: :bad_request
       return
     end
 
@@ -35,7 +35,7 @@ class RunsController < ApplicationController
     @run = find_run
 
     unless @run
-      render json: { error: 'Run not found' }, status: :not_found
+      render json: { error: "Run not found" }, status: :not_found
       return
     end
 
@@ -46,12 +46,12 @@ class RunsController < ApplicationController
     @run = find_run
 
     if @run.nil?
-      render json: { error: 'Run not found' }, status: :not_found
+      render json: { error: "Run not found" }, status: :not_found
       return
     end
 
     unless @run.running?
-      render json: { error: 'Run is not running' }, status: :unprocessable_entity
+      render json: { error: "Run is not running" }, status: :unprocessable_entity
       return
     end
 
@@ -75,15 +75,15 @@ class RunsController < ApplicationController
       if params[provider].present?
         params[provider].each do |item|
           # Support both new format (object with instance_type/alias) and legacy (string)
-          if item.is_a?(Hash) || item.is_a?(ActionController::Parameters)
-            instance_types << {
+          instance_types << if item.is_a?(Hash) || item.is_a?(ActionController::Parameters)
+            {
               provider: provider,
               instance_type: item[:instance_type] || item["instance_type"],
               instance_type_alias: item[:alias] || item["alias"]
             }
           else
             # Legacy: plain string
-            instance_types << { provider: provider, instance_type: item, instance_type_alias: item }
+            { provider: provider, instance_type: item, instance_type_alias: item }
           end
         end
       end
@@ -102,7 +102,7 @@ class RunsController < ApplicationController
           instance_type: config[:instance_type],
           instance_type_alias: config[:instance_type_alias],
           run_number: run_number,
-          status: 'pending'
+          status: "pending"
         )
       end
     end

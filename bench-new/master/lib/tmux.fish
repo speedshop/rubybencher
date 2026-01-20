@@ -41,13 +41,51 @@ function tmux_sync_env
                 continue
         end
 
-        tmux set-environment -g $name $value
+        set -l tmux_output (tmux set-environment -g $name $value 2>&1)
+        set -l tmux_status $status
+        if test $tmux_status -ne 0
+            if test -z "$tmux_output"
+                set tmux_output "unknown tmux error"
+            end
+            log_error "tmux set-environment failed for $name: $tmux_output"
+            if test "$DEBUG" = true
+                tmux_debug_context
+            end
+            return $tmux_status
+        end
+    end
+end
+
+function tmux_debug_context
+    if not set -q TMUX
+        return 0
+    end
+
+    set -l session_name (tmux display-message -p "#S" 2>/dev/null)
+    set -l window_name (tmux display-message -p "#W" 2>/dev/null)
+    set -l pane_id (tmux display-message -p "#P" 2>/dev/null)
+    set -l window_size (tmux display-message -p "#{window_width}x#{window_height}" 2>/dev/null)
+
+    if test -n "$session_name"
+        log_info "tmux session: $session_name window: $window_name pane: $pane_id size: $window_size"
+    end
+
+    if test "$DEBUG" = true
+        set -l panes (tmux list-panes -F '#{pane_id}:#{pane_title}' 2>/dev/null)
+        if test -n "$panes"
+            set -l panes_line (string join ", " -- $panes)
+            log_info "tmux panes: $panes_line"
+        end
     end
 end
 
 function ensure_tmux_session
     # If already in tmux, we're good
     if set -q TMUX
+        tmux_sync_env
+        if test "$DEBUG" = true
+            tmux_debug_context
+        end
         return 0
     end
 
@@ -61,7 +99,6 @@ function ensure_tmux_session
     set -l run_script "$SCRIPT_DIR/run.fish"
 
     # Pass all original arguments
-    tmux_sync_env
     tmux new-session -s $TMUX_SESSION_NAME "fish $run_script $argv; read -P 'Press Enter to close...'"
     exit $status
 end
@@ -116,40 +153,92 @@ function tmux_init_pane_tracking
     command find $TMUX_PANE_TEMP_DIR -type f -name "*.running" -delete 2>/dev/null
 end
 
-function tmux_spawn_pane -a title cmd
+function tmux_spawn_pane -a title
     # Spawn a new pane below, run the command, capture exit status
     # Returns the pane ID which can be used to wait for completion
     #
     # Args:
     #   title - displayed in pane (via printf at start)
-    #   cmd   - command to run
+    #   - remaining arguments: the command and its arguments
+
+    set -l cmd $argv[2..-1]
+
+    if not set -q TMUX
+        log_error "tmux_spawn_pane called outside tmux"
+        return 1
+    end
+
+    set -l panes_before ""
+    if test "$DEBUG" = true
+        log_info "Preparing tmux pane: $title"
+        tmux_debug_context
+        log_info "tmux pane command: $cmd"
+        set panes_before (tmux list-panes -F '#{pane_id}:#{pane_title}' 2>/dev/null)
+    end
 
     set -l pane_id (random)
     set -l status_file "$TMUX_PANE_TEMP_DIR/$pane_id.status"
     set -l running_file "$TMUX_PANE_TEMP_DIR/$pane_id.running"
 
-    # Create running marker
-    touch $running_file
+    mkdir -p $TMUX_PANE_TEMP_DIR
+    command touch $running_file
+
+    set -l escaped_status_file (string escape -- $status_file)
+    set -l escaped_running_file (string escape -- $running_file)
+    set -l escaped_title (string escape -- $title)
 
     # Build the command that will run in the pane
     # It prints a title, runs the command, saves exit status, removes running marker
-    set -l pane_cmd "fish -c '
-        printf \"\\033[1;36m━━━ $title ━━━\\033[0m\\n\\n\"
+    set -l pane_cmd "fish -c \"
+        printf \\\\x1b'['1';'36'm━━━ $escaped_title ━━━\\\\x1b'['0'm'\\n''\\n'
         $cmd
-        set -l exit_code \$status
-        echo \$exit_code > $status_file
-        rm -f $running_file
-        if test \$exit_code -ne 0
-            printf \"\\n\\033[1;31m━━━ FAILED (exit \$exit_code) ━━━\\033[0m\\n\"
+        set exit_code \\\$status
+        echo \\\$exit_code > $escaped_status_file
+        rm -f $escaped_running_file
+        if test \\\$exit_code -ne 0
+            printf \\\\x1b'['1';'31'm━━━ FAILED (exit \\\$exit_code) ━━━\\\\x1b'['0'm'\\n'
             sleep 5
         end
-    '"
+    \""
 
     # Split window horizontally (new pane below)
-    tmux split-window -v -d -l 30% "$pane_cmd"
+    set -l split_output (tmux split-window -v -d -l 30% "$pane_cmd" 2>&1)
+    set -l split_status $status
+    if test $split_status -ne 0
+        command rm -f $running_file
+        if test -z "$split_output"
+            set split_output "unknown tmux error"
+        end
+        log_error "Failed to spawn tmux pane: $split_output"
+        tmux_debug_context
+        echo $pane_id
+        return $split_status
+    end
+
+    if test "$DEBUG" = true
+        log_info "Spawned tmux pane for $title"
+    end
 
     # Rebalance layout to tile bottom panes
-    tmux select-layout main-horizontal
+    set -l layout_output (tmux select-layout main-horizontal 2>&1)
+    set -l layout_status $status
+    if test $layout_status -ne 0
+        if test -z "$layout_output"
+            set layout_output "unknown tmux error"
+        end
+        log_warning "tmux select-layout failed: $layout_output"
+        tmux_debug_context
+    end
+
+    if test "$DEBUG" = true
+        set -l panes_after (tmux list-panes -F '#{pane_id}:#{pane_title}' 2>/dev/null)
+        if test -n "$panes_before"
+            log_info "tmux panes before: $panes_before"
+        end
+        if test -n "$panes_after"
+            log_info "tmux panes after: $panes_after"
+        end
+    end
 
     echo $pane_id
 end

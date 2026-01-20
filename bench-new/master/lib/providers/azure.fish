@@ -10,11 +10,30 @@ function get_azure_vcpu_count
     end
 end
 
+function azure_effective_region
+    set -l azure_region "northcentralus"
+    if set -q AZURE_REGION
+        set azure_region "$AZURE_REGION"
+    end
+
+    echo $azure_region
+end
+
+
+
+
+
 function prepare_azure_task_runners
     # Prepare Azure task runners: validation, config building, terraform init
     # Returns 0 if ready to proceed, 1 if nothing to do
-    set -l azure_instances (cat "$CONFIG_FILE" | jq -r '.azure // empty')
-    if test -z "$azure_instances"; or test "$azure_instances" = "null"
+    set -l instance_types_json $argv[1]
+    if test -z "$instance_types_json"
+        # Get instances path (supports both .azure and .azure.instances formats)
+        set -l instances_path (get_provider_instances_jq_path "azure")
+        set instance_types_json (cat "$CONFIG_FILE" | jq -c "$instances_path // []")
+    end
+
+    if test -z "$instance_types_json"; or test "$instance_types_json" = "null"; or test "$instance_types_json" = "[]"
         return 1
     end
 
@@ -41,6 +60,7 @@ function prepare_azure_task_runners
     end
 
     set -g AZURE_TF_DIR "$BENCH_DIR/infrastructure/azure"
+    set -g AZURE_TF_LOG_FILE (log_path_for "azure-terraform")
     set -l meta_tf_dir "$BENCH_DIR/infrastructure/meta"
 
     if not test -d "$AZURE_TF_DIR"
@@ -50,10 +70,7 @@ function prepare_azure_task_runners
 
     # Get configuration values
     set -l ruby_version (cat "$CONFIG_FILE" | jq -r '.ruby_version')
-    set -l azure_region "northcentralus"
-    if set -q AZURE_REGION
-        set azure_region "$AZURE_REGION"
-    end
+    set -l azure_region (azure_effective_region)
 
     set -l admin_username "azureuser"
     if set -q AZURE_ADMIN_USERNAME
@@ -110,11 +127,10 @@ function prepare_azure_task_runners
     end
     set ssh_public_key (string trim -- $ssh_public_key)
 
-    # Build instance types JSON
-    set -l instance_types_json (cat "$CONFIG_FILE" | jq -c '.azure')
+    set -l instance_types_count (echo $instance_types_json | jq -r 'length')
 
-    # Get the number of runs per instance type
-    set -l min_runners (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
+    # Get the number of runs per instance type - this determines how many task runner slots we need
+    set -l min_runners (get_runs_per_instance_type "azure")
 
     # Optional cap for task runners per instance
     set -l runner_cap (get_task_runner_cap "azure")
@@ -123,9 +139,9 @@ function prepare_azure_task_runners
     set -l vcpu_map "{"
     set -l instance_count_map "{"
     set -l first true
-    for i in (seq 0 (math (cat "$CONFIG_FILE" | jq '.azure | length') - 1))
-        set -l alias_name (cat "$CONFIG_FILE" | jq -r ".azure[$i].alias")
-        set -l instance_type (cat "$CONFIG_FILE" | jq -r ".azure[$i].instance_type")
+    for i in (seq 0 (math $instance_types_count - 1))
+        set -l alias_name (echo $instance_types_json | jq -r ".[$i].alias")
+        set -l instance_type (echo $instance_types_json | jq -r ".[$i].instance_type")
         set -l vcpu (get_azure_vcpu_count $instance_type)
         set -l effective_vcpu $vcpu
 
@@ -166,7 +182,8 @@ function prepare_azure_task_runners
 
     # Initialize terraform if needed
     if not test -d "$AZURE_TF_DIR/.terraform"
-        run_with_spinner "Initializing Azure task runner Terraform..." terraform -chdir="$AZURE_TF_DIR" init
+        log_info "Initializing Azure task runner Terraform..."
+        run_logged_command "$AZURE_TF_LOG_FILE" terraform -chdir="$AZURE_TF_DIR" init
         if test $status -ne 0
             log_error "Azure terraform init failed"
             exit 1
@@ -286,6 +303,7 @@ function update_azure_status
         --argjson instance_ids "$instance_ids" \
         --argjson public_ips "$public_ips"
 end
+
 
 function setup_azure_task_runners
     # Legacy function for backwards compatibility (runs synchronously)

@@ -4,6 +4,8 @@ function parse_args
         switch $argv[$i]
             case -f --force -y --yes
                 set -g FORCE true
+            case --providers-only
+                set -g PROVIDERS_ONLY true
             case --run-id
                 set i (math $i + 1)
                 if test $i -le (count $argv)
@@ -21,5 +23,11 @@ function parse_args
                 exit 1
         end
         set i (math $i + 1)
+    end
+
+    # Validate: providers-only and run-id are mutually exclusive
+    if test "$PROVIDERS_ONLY" = true; and test -n "$TARGET_RUN_ID"
+        log_error "--providers-only and --run-id cannot be used together"
+        exit 1
     end
 end

@@ -48,6 +48,7 @@ function prepare_aws_task_runners
     log_info "Preparing AWS task runner infrastructure..."
 
     set -g AWS_TF_DIR "$BENCH_DIR/infrastructure/aws"
+    set -g AWS_TF_LOG_FILE (log_path_for "aws-terraform")
     set -l meta_tf_dir "$BENCH_DIR/infrastructure/meta"
 
     if not test -d "$AWS_TF_DIR"
@@ -71,11 +72,14 @@ function prepare_aws_task_runners
         exit 1
     end
 
+    # Get instances path (supports both .aws and .aws.instances formats)
+    set -l instances_path (get_provider_instances_jq_path "aws")
+
     # Build instance types JSON
-    set -l instance_types_json (cat "$CONFIG_FILE" | jq -c '.aws')
+    set -l instance_types_json (cat "$CONFIG_FILE" | jq -c "$instances_path")
 
     # Get the number of runs per instance type - this determines how many task runner slots we need
-    set -l min_runners (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
+    set -l min_runners (get_runs_per_instance_type "aws")
 
     # Optional cap for task runners per instance
     set -l runner_cap (get_task_runner_cap "aws")
@@ -84,9 +88,9 @@ function prepare_aws_task_runners
     set -l vcpu_map "{"
     set -l instance_count_map "{"
     set -l first true
-    for i in (seq 0 (math (cat "$CONFIG_FILE" | jq '.aws | length') - 1))
-        set -l alias_name (cat "$CONFIG_FILE" | jq -r ".aws[$i].alias")
-        set -l instance_type (cat "$CONFIG_FILE" | jq -r ".aws[$i].instance_type")
+    for i in (seq 0 (math (cat "$CONFIG_FILE" | jq "$instances_path | length") - 1))
+        set -l alias_name (cat "$CONFIG_FILE" | jq -r "$instances_path[$i].alias")
+        set -l instance_type (cat "$CONFIG_FILE" | jq -r "$instances_path[$i].instance_type")
         set -l vcpu (get_vcpu_count $instance_type)
         set -l effective_vcpu $vcpu
 
@@ -127,7 +131,8 @@ function prepare_aws_task_runners
 
     # Initialize terraform if needed
     if not test -d "$AWS_TF_DIR/.terraform"
-        run_with_spinner "Initializing AWS task runner Terraform..." terraform -chdir="$AWS_TF_DIR" init
+        log_info "Initializing AWS task runner Terraform..."
+        run_logged_command "$AWS_TF_LOG_FILE" terraform -chdir="$AWS_TF_DIR" init
         if test $status -ne 0
             log_error "AWS terraform init failed"
             exit 1

@@ -43,6 +43,7 @@ locals {
         key           = "${config.alias}-${i + 1}"
         alias         = config.alias
         instance_type = config.instance_type
+        arch          = config.arch
         index         = i + 1
       }
     ]
@@ -149,7 +150,7 @@ resource "azurerm_linux_virtual_machine" "task_runner" {
   source_image_reference {
     publisher = "Canonical"
     offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts"
+    sku       = each.value.arch == "arm64" ? "22_04-lts-arm64" : "22_04-lts-gen2"
     version   = "latest"
   }
 

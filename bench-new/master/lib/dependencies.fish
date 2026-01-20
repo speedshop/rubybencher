@@ -4,9 +4,6 @@ function check_dependencies
     set -l missing_deps
 
     set -l base_deps jq curl
-    if not set -q NON_INTERACTIVE; or test "$NON_INTERACTIVE" != true
-        set base_deps $base_deps gum
-    end
 
     for dep in $base_deps
         if not command -q $dep

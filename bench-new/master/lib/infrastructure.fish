@@ -48,9 +48,12 @@ function setup_infrastructure
         exit 1
     end
 
+    set -g META_TF_LOG_FILE (log_path_for "meta-terraform")
+
     # Initialize terraform if needed
     if not test -d "$tf_dir/.terraform"
-        run_with_spinner "Initializing meta Terraform..." terraform -chdir="$tf_dir" init
+        log_info "Initializing meta Terraform..."
+        run_logged_command "$META_TF_LOG_FILE" terraform -chdir="$tf_dir" init
         if test $status -ne 0
             log_error "Meta terraform init failed"
             exit 1
@@ -58,39 +61,21 @@ function setup_infrastructure
     end
 
     set -l tf_cmd terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
+    set -l tf_log_file "$META_TF_LOG_FILE"
 
-    # In non-interactive mode (or outside tmux), run terraform in the foreground.
-    if set -q NON_INTERACTIVE; and test "$NON_INTERACTIVE" = true
-        log_info "Running meta terraform apply..."
-        $tf_cmd
-        if test $status -ne 0
-            log_error "Meta infrastructure terraform failed"
-            exit 1
-        end
-        set -g META_TF_PANE_ID ""
-        log_success "Meta infrastructure ready"
-        return 0
+    log_info "Running meta terraform apply..."
+    if test -n "$tf_log_file"
+        log_info "Meta terraform log: $tf_log_file"
     end
-
-    # Interactive mode: spawn terraform apply in a separate tmux pane
-    set -g META_TF_PANE_ID (tmux_spawn_pane "Meta Infrastructure (Orchestrator)" (string join ' ' $tf_cmd))
-    log_info "Meta terraform running in pane..."
-end
-
-function wait_for_meta_infrastructure
-    # Wait for meta infrastructure terraform to complete
-    if test -z "$META_TF_PANE_ID"
-        return 0
-    end
-
-    log_info "Waiting for meta infrastructure terraform..."
-    tmux_wait_pane $META_TF_PANE_ID
-    set -l tf_status $status
-
-    if test $tf_status -ne 0
+    run_logged_command "$tf_log_file" $tf_cmd
+    if test $status -ne 0
         log_error "Meta infrastructure terraform failed"
+        if test -n "$tf_log_file"
+            log_error "See $tf_log_file for details"
+        end
         exit 1
     end
-
     log_success "Meta infrastructure ready"
+    return 0
 end
+

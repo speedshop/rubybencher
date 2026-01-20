@@ -28,7 +28,7 @@ class StorageServiceTest < ActiveSupport::TestCase
     assert_nil result
   end
 
-  test "result_url generates presigned download URL" do
+  test "result_url generates direct S3 download URL" do
     url = StorageService.result_url("results/run-123/task_1_result.tar.gz")
 
     assert url.present?
