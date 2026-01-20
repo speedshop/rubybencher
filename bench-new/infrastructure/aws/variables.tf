@@ -14,7 +14,7 @@ variable "run_id" {
   type        = string
 
   validation {
-    condition     = length(trim(var.run_id)) > 0
+    condition     = length(trimspace(var.run_id)) > 0
     error_message = "run_id must be set to a non-empty value."
   }
 }
