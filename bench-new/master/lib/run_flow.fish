@@ -128,7 +128,17 @@ function poll_tasks_subset -a provider instance_types_json
     log_info "Waiting for $provider batch tasks to complete..."
 
     set -l poll_interval 10
-    set -l types_json (echo $instance_types_json | jq -c '[.[].instance_type]')
+
+    set -l instance_types_string (string join ' ' -- $instance_types_json)
+    set -l types_json (printf "%s" $instance_types_string | jq -c '[.[].instance_type]' 2>/dev/null)
+
+    if test -z "$types_json"
+        log_error "Invalid batch instance type payload; cannot poll subset"
+        if test "$DEBUG" = true
+            log_error "Payload: $instance_types_string"
+        end
+        return 1
+    end
 
     while true
         set -l run_response (curl -s "$ORCHESTRATOR_URL/runs/$RUN_ID" \
@@ -148,8 +158,11 @@ function poll_tasks_subset -a provider instance_types_json
         set -l tasks_response (curl -s "$ORCHESTRATOR_URL/runs/$RUN_ID/tasks" \
             -H "Authorization: Bearer $API_KEY")
 
-        set -l stats_line (echo $tasks_response | jq -r --arg provider "$provider" --argjson types "$types_json" '
-          [ .tasks[] | select(.provider == $provider and (.instance_type | IN($types[]))) ] as $t |
+        set -l tasks_json (string join ' ' -- $tasks_response)
+
+        set -l stats_line (printf "%s" $tasks_json | jq -r --arg provider "$provider" --arg types_json "$types_json" '
+          ($types_json | fromjson) as $types |
+          [ .tasks[] | select(.provider == $provider and (.instance_type as $it | ($types | index($it)) != null)) ] as $t |
           [
             ($t|length),
             ($t|map(select(.status=="pending"))|length),
@@ -158,6 +171,21 @@ function poll_tasks_subset -a provider instance_types_json
             ($t|map(select(.status=="completed"))|length),
             ($t|map(select(.status=="failed"))|length)
           ] | @tsv' 2>/dev/null)
+
+        if test -z "$stats_line"; and test "$DEBUG" = true
+            log_warning "Failed to parse or filter batch tasks response"
+            printf "%s" $tasks_json | jq -r --arg provider "$provider" --arg types_json "$types_json" '
+              ($types_json | fromjson) as $types |
+              [ .tasks[] | select(.provider == $provider and (.instance_type as $it | ($types | index($it)) != null)) ] as $t |
+              [
+                ($t|length),
+                ($t|map(select(.status=="pending"))|length),
+                ($t|map(select(.status=="claimed"))|length),
+                ($t|map(select(.status=="running"))|length),
+                ($t|map(select(.status=="completed"))|length),
+                ($t|map(select(.status=="failed"))|length)
+              ] | @tsv'
+        end
 
         set -l total 0
         set -l pending 0

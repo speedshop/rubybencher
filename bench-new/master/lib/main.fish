@@ -162,6 +162,13 @@ function main
                     end
 
                 case azure
+                    set -l azure_batches (azure_batches_for_config)
+                    if test (count $azure_batches) -gt 0
+                        set -g AZURE_BATCHES $azure_batches
+                        log_warning "Deferring Azure provisioning to batch loop"
+                        continue
+                    end
+
                     if azure_task_runners_exist
                         if azure_run_id_matches "$RUN_ID"
                             log_info "Azure task runners already exist for run $RUN_ID; skipping apply"
@@ -171,13 +178,6 @@ function main
                         else
                             log_info "Azure task runners exist but run ID differs; recreating"
                         end
-                    end
-
-                    set -l azure_batches (azure_batches_for_config)
-                    if test (count $azure_batches) -gt 0
-                        set -g AZURE_BATCHES $azure_batches
-                        log_warning "Deferring Azure provisioning until after run creation"
-                        continue
                     end
 
                     if prepare_azure_task_runners
