@@ -8,7 +8,7 @@ set -g BENCH_DIR (dirname $SCRIPT_DIR)
 set -g LIB_DIR "$SCRIPT_DIR/lib"
 
 # Options
-set -g FORCE false
+set -g FORCE true
 set -g TARGET_RUN_ID ""
 set -g PROVIDERS_ONLY false
 
