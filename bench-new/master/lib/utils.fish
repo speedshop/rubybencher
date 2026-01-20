@@ -81,11 +81,18 @@ end
 
 function run_logged_command_bg -a log_file
     set -l cmd $argv[2..-1]
-    # Run in background but discard stdout since tee already logs
-    # Only return the PID
-    run_logged_command "$log_file" $cmd > /dev/null &
-    set -l pid (jobs -l -p | tail -1)
-    echo $pid
+    set -l tee_targets (log_targets_for "$log_file")
+
+    # Run command in background subshell
+    # Fish doesn't capture PID when backgrounding functions, so we use fish -c
+    if test (count $tee_targets) -eq 0
+        fish -c "$(string escape -- $cmd | string join ' ')" &
+    else
+        set -l targets_str (string join ' ' (string escape -- $tee_targets))
+        set -l cmd_str (string escape -- $cmd | string join ' ')
+        fish -c "begin; $cmd_str; end 2>&1 | tee -a $targets_str" &
+    end
+    echo $last_pid
 end
 
 function wrap_command_with_logging -a log_file
