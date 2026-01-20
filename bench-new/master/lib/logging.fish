@@ -4,12 +4,12 @@ function setup_logging
     end
 
     set -g LOG_DIR "$REPO_ROOT/logs"
-    mkdir -p "$LOG_DIR"
+    command mkdir -p "$LOG_DIR"
 
     set -l timestamp (date -u +"%Y%m%dT%H%M%SZ")
     set -g LOG_RUN_TAG "$timestamp"
     set -g LOG_PENDING_DIR "$LOG_DIR/pending"
-    mkdir -p "$LOG_PENDING_DIR"
+    command mkdir -p "$LOG_PENDING_DIR"
 
     set -g LOG_FILE "$LOG_PENDING_DIR/run-$LOG_RUN_TAG.log"
     command touch "$LOG_FILE"
@@ -29,7 +29,7 @@ function ensure_run_log_dir
     end
 
     set -g LOG_RUN_DIR "$run_dir"
-    mkdir -p "$LOG_RUN_DIR"
+    command mkdir -p "$LOG_RUN_DIR"
 
     set -l target_log "$LOG_RUN_DIR/run.log"
     if set -q LOG_FILE; and test -n "$LOG_FILE"

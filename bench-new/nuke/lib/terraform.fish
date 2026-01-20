@@ -100,3 +100,14 @@ function destroy_terraform_for_run
     # NOTE: Meta infrastructure is NEVER destroyed in targeted mode
     log_info "Meta infrastructure preserved (shared across runs)"
 end
+
+function destroy_terraform_providers_only
+    # Destroy cloud task runner infrastructure only (preserve meta)
+    destroy_terraform_dir "$BENCH_DIR/infrastructure/aws" "AWS task runners"
+
+    # Destroy Azure task runner infrastructure
+    destroy_terraform_dir "$BENCH_DIR/infrastructure/azure" "Azure task runners"
+
+    # NOTE: Meta infrastructure is NEVER destroyed in providers-only mode
+    log_info "Meta infrastructure preserved (orchestrator/bastion/S3/VPC)"
+end

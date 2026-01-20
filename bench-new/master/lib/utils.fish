@@ -34,7 +34,7 @@ function log_path_for -a name
     end
 
     set -l pending_dir "$LOG_DIR/pending"
-    mkdir -p "$pending_dir"
+    command mkdir -p "$pending_dir"
     set -l tag "$LOG_RUN_TAG"
     echo "$pending_dir/$name-$tag.log"
 end
@@ -48,6 +48,16 @@ function log_targets_for -a log_file
 
     if set -q LOG_FILE; and test -n "$LOG_FILE"
         set targets $targets "$LOG_FILE"
+    end
+
+    for target in $targets
+        set -l target_dir (dirname "$target")
+        if test -n "$target_dir"
+            command mkdir -p "$target_dir"
+        end
+        if not test -f "$target"
+            command touch "$target"
+        end
     end
 
     echo $targets
