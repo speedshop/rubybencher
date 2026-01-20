@@ -84,7 +84,7 @@ function run_logged_command_bg -a log_file
     # Run in background but discard stdout since tee already logs
     # Only return the PID
     run_logged_command "$log_file" $cmd > /dev/null &
-    set -l pid $last_pid
+    set -l pid (jobs -l -p | tail -1)
     echo $pid
 end
 
