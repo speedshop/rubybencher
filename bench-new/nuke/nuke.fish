@@ -159,11 +159,14 @@ function main
     end
 
     # Tag-based cloud resource cleanup (handles stragglers)
-    cleanup_aws_stragglers
-    or set errors (math $errors + 1)
+    # Skip manual cleanup in providers-only mode (terraform handles it)
+    if test "$PROVIDERS_ONLY" != true
+        cleanup_aws_stragglers
+        or set errors (math $errors + 1)
 
-    cleanup_azure_resources
-    or set errors (math $errors + 1)
+        cleanup_azure_resources
+        or set errors (math $errors + 1)
+    end
 
     # Local cleanup only in full mode
     if test -z "$TARGET_RUN_ID"; and test "$PROVIDERS_ONLY" != true
