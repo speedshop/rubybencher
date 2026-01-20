@@ -1,0 +1,63 @@
+{
+  "ruby_version": "3.4.8",
+  "runs_per_instance_type": 3,
+  "task_runners": {
+    "count": 2
+  },
+  "aws": [
+    {
+      "instance_type": "c8g.medium",
+      "alias": "c8g"
+    },
+    {
+      "instance_type": "c7g.medium",
+      "alias": "c7g"
+    },
+    {
+      "instance_type": "c6g.medium",
+      "alias": "c6g"
+    },
+    {
+      "instance_type": "c8i.large",
+      "alias": "c8i"
+    },
+    {
+      "instance_type": "c7i.large",
+      "alias": "c7i"
+    },
+    {
+      "instance_type": "c6i.large",
+      "alias": "c6i"
+    },
+    {
+      "instance_type": "c8a.medium",
+      "alias": "c8a"
+    },
+    {
+      "instance_type": "c7a.medium",
+      "alias": "c7a"
+    }
+  ],
+  "azure": [
+    {
+      "instance_type": "Standard_D2pls_v6",
+      "alias": "dpls-v6",
+      "arch": "arm64"
+    },
+    {
+      "instance_type": "Standard_D2als_v6",
+      "alias": "dals-v6",
+      "arch": "amd64"
+    },
+    {
+      "instance_type": "Standard_D2ls_v6",
+      "alias": "dls-v6",
+      "arch": "amd64"
+    },
+    {
+      "instance_type": "Standard_F2als_v6",
+      "alias": "fals-v6",
+      "arch": "amd64"
+    }
+  ]
+}

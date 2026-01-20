@@ -28,7 +28,9 @@ function prepare_azure_task_runners
     # Returns 0 if ready to proceed, 1 if nothing to do
     set -l instance_types_json $argv[1]
     if test -z "$instance_types_json"
-        set instance_types_json (cat "$CONFIG_FILE" | jq -c '.azure // []')
+        # Get instances path (supports both .azure and .azure.instances formats)
+        set -l instances_path (get_provider_instances_jq_path "azure")
+        set instance_types_json (cat "$CONFIG_FILE" | jq -c "$instances_path // []")
     end
 
     if test -z "$instance_types_json"; or test "$instance_types_json" = "null"; or test "$instance_types_json" = "[]"
@@ -127,8 +129,8 @@ function prepare_azure_task_runners
 
     set -l instance_types_count (echo $instance_types_json | jq -r 'length')
 
-    # Get the number of runs per instance type
-    set -l min_runners (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type')
+    # Get the number of runs per instance type - this determines how many task runner slots we need
+    set -l min_runners (get_runs_per_instance_type "azure")
 
     # Optional cap for task runners per instance
     set -l runner_cap (get_task_runner_cap "azure")

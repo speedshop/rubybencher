@@ -146,20 +146,28 @@ end
 
 function get_task_runner_count
     # Get the number of task runners to start for a given provider
-    # Supports:
-    #   task_runners.count: 3              (applies to all providers)
-    #   task_runners.count.local: 3        (provider-specific)
+    # Supports (in priority order):
+    #   aws.task_runners.count: 3          (provider object, new style)
+    #   task_runners.count.aws: 3          (global object with provider keys, old style)
+    #   task_runners.count: 3              (global default)
     # Defaults to 1 if not specified
     set -l provider $argv[1]
 
-    # First check for provider-specific count (only if count is an object)
-    set -l provider_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .task_runners.count | type == "object" then .task_runners.count[$p] // empty else empty end')
-    if test -n "$provider_count"; and test "$provider_count" != "null"
-        echo $provider_count
+    # First check for provider object style: aws.task_runners.count
+    set -l provider_obj_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" '.[$p].task_runners.count // empty')
+    if test -n "$provider_obj_count"; and test "$provider_obj_count" != "null"
+        echo $provider_obj_count
         return
     end
 
-    # Then check for global count (if count is a number, not an object)
+    # Then check for global object style: task_runners.count.aws
+    set -l global_obj_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .task_runners.count | type == "object" then .task_runners.count[$p] // empty else empty end')
+    if test -n "$global_obj_count"; and test "$global_obj_count" != "null"
+        echo $global_obj_count
+        return
+    end
+
+    # Then check for global number: task_runners.count
     set -l global_count (cat "$CONFIG_FILE" | jq -r 'if .task_runners.count | type == "number" then .task_runners.count else empty end')
     if test -n "$global_count"; and test "$global_count" != "null"
         echo $global_count
@@ -173,20 +181,72 @@ end
 function get_task_runner_cap
     # Get the optional max task runner count for a provider.
     # Returns empty if not specified in config.
+    # Uses same priority as get_task_runner_count
     set -l provider $argv[1]
 
-    # First check for provider-specific count (only if count is an object)
-    set -l provider_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .task_runners.count | type == "object" then .task_runners.count[$p] // empty else empty end')
-    if test -n "$provider_count"; and test "$provider_count" != "null"
-        echo $provider_count
+    # First check for provider object style: aws.task_runners.count
+    set -l provider_obj_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" '.[$p].task_runners.count // empty')
+    if test -n "$provider_obj_count"; and test "$provider_obj_count" != "null"
+        echo $provider_obj_count
         return
     end
 
-    # Then check for global count (if count is a number, not an object)
+    # Then check for global object style: task_runners.count.aws
+    set -l global_obj_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .task_runners.count | type == "object" then .task_runners.count[$p] // empty else empty end')
+    if test -n "$global_obj_count"; and test "$global_obj_count" != "null"
+        echo $global_obj_count
+        return
+    end
+
+    # Then check for global number: task_runners.count
     set -l global_count (cat "$CONFIG_FILE" | jq -r 'if .task_runners.count | type == "number" then .task_runners.count else empty end')
     if test -n "$global_count"; and test "$global_count" != "null"
         echo $global_count
         return
+    end
+end
+
+function get_runs_per_instance_type
+    # Get the number of benchmark runs per instance type for a given provider
+    # Supports (in priority order):
+    #   aws.runs_per_instance_type: 3      (provider object, new style)
+    #   runs_per_instance_type: 3          (global default)
+    # Required field - will error if not found
+    set -l provider $argv[1]
+
+    # First check for provider object style: aws.runs_per_instance_type
+    set -l provider_runs (cat "$CONFIG_FILE" | jq -r --arg p "$provider" '.[$p].runs_per_instance_type // empty')
+    if test -n "$provider_runs"; and test "$provider_runs" != "null"
+        echo $provider_runs
+        return
+    end
+
+    # Then check for global runs_per_instance_type
+    set -l global_runs (cat "$CONFIG_FILE" | jq -r '.runs_per_instance_type // empty')
+    if test -n "$global_runs"; and test "$global_runs" != "null"
+        echo $global_runs
+        return
+    end
+
+    # No default - this is a required field
+    log_error "Config file missing runs_per_instance_type (global or for provider: $provider)"
+    exit 1
+end
+
+function get_provider_instances_jq_path
+    # Returns the jq path to the instances array for a provider
+    # Supports both formats:
+    #   Old: .aws (array at top level)
+    #   New: .aws.instances (object with instances key)
+    set -l provider $argv[1]
+
+    # Check if provider config is an object with instances key
+    set -l has_instances_key (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .[$p] | type == "object" and (.[$p].instances | type == "array") then "true" else "false" end')
+
+    if test "$has_instances_key" = "true"
+        echo ".[$provider].instances"
+    else
+        echo ".[$provider]"
     end
 end
 
