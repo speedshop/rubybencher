@@ -229,9 +229,9 @@ function get_provider_instances_jq_path
     set -l has_instances_key (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .[$p] | type == "object" and (.[$p].instances | type == "array") then "true" else "false" end')
 
     if test "$has_instances_key" = "true"
-        echo ".[$provider].instances"
+        echo ".[\"$provider\"].instances"
     else
-        echo ".[$provider]"
+        echo ".[\"$provider\"]"
     end
 end
 
