@@ -10,7 +10,7 @@ WORKDIR /task-runner
 
 # Copy Gemfile first for layer caching
 COPY Gemfile /task-runner/
-RUN bundle install --without test
+RUN bundle install
 
 # Copy scripts and Ruby code
 COPY run.sh /task-runner/
