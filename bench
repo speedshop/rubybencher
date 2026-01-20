@@ -27,13 +27,19 @@ function print_usage
     echo "Usage: bench <command> [args...]"
     echo ""
     echo "Commands:"
-    echo "  run       Run benchmarks"
-    echo "  nuke      Destroy all infrastructure"
+    echo "  run       Run benchmarks (-c config required)"
+    echo "  nuke      Destroy infrastructure (--force, --providers-only, --run-id)"
     echo "  site      Generate HTML report from results"
     echo "  serve     Serve the site locally on port 8080"
     echo "  publish   Publish site to Cloudflare Pages"
     echo ""
     echo "Run 'bench <command> --help' for command-specific help."
+    echo ""
+    echo "Examples:"
+    echo "  bench run -c bench-new/config/example.json --local-orchestrator --mock"
+    echo "  bench nuke --providers-only"
+    echo "  bench site"
+    echo "  bench serve"
 end
 
 function cmd_run
