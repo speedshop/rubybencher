@@ -459,6 +459,9 @@ function azure_run_batches
         update_azure_status
 
         poll_tasks_subset azure $batch_json
+        if test $status -ne 0
+            exit 1
+        end
 
         if test "$DEBUG" != true
             log_info "Azure batch $idx/$total_batches: destroying task runners..."

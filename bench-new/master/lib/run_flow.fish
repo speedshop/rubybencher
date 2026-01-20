@@ -111,8 +111,12 @@ function poll_run_status
             echo "[$progress%] Pending: $pending | Running: "(math $claimed + $running)" | ✓ $completed | ✗ $failed"
         end
 
-        if test "$run_status" = "completed"; or test "$run_status" = "cancelled"
-            log_success "Run $run_status"
+        if test "$run_status" = "completed"; or test "$run_status" = "cancelled"; or test "$run_status" = "failed"
+            if test "$run_status" = "failed"
+                log_error "Run failed"
+            else
+                log_success "Run $run_status"
+            end
             break
         end
 
@@ -131,9 +135,14 @@ function poll_tasks_subset -a provider instance_types_json
             -H "Authorization: Bearer $API_KEY")
 
         set -l run_status (echo $run_response | jq -r '.status // "unknown"')
-        if test "$run_status" = "completed"; or test "$run_status" = "cancelled"
+        if test "$run_status" = "completed"; or test "$run_status" = "cancelled"; or test "$run_status" = "failed"
+            if test "$run_status" = "failed"
+                log_error "Run failed"
+                return 1
+            end
+
             log_success "Run $run_status"
-            break
+            return 0
         end
 
         set -l tasks_response (curl -s "$ORCHESTRATOR_URL/runs/$RUN_ID/tasks" \
@@ -182,7 +191,7 @@ function poll_tasks_subset -a provider instance_types_json
         set -l incomplete (math $pending + $claimed + $running)
         if test $incomplete -eq 0
             log_success "Batch tasks complete ($completed completed, $failed failed)"
-            break
+            return 0
         end
 
         sleep $poll_interval

@@ -73,9 +73,11 @@ echo "Task runner image built successfully"
 
 # Determine container arguments
 CONTAINER_ARGS="--orchestrator-url $ORCHESTRATOR_URL --api-key $API_KEY --run-id $RUN_ID --provider $PROVIDER --instance-type $INSTANCE_TYPE"
+CONTAINER_ENV_ARGS=""
 
 if [ "$MOCK_BENCHMARK" = "true" ]; then
     CONTAINER_ARGS="$CONTAINER_ARGS --mock"
+    CONTAINER_ENV_ARGS="$CONTAINER_ENV_ARGS -e MOCK_ALWAYS_SUCCEED=1"
 fi
 
 if [ "$DEBUG_MODE" = "true" ]; then
@@ -95,6 +97,7 @@ for i in $(seq 1 $VCPU_COUNT); do
         --name "$CONTAINER_NAME" \
         --cpuset-cpus="$CPU_INDEX" \
         --restart=no \
+        $CONTAINER_ENV_ARGS \
         task-runner:$RUBY_VERSION \
         $CONTAINER_ARGS
 
