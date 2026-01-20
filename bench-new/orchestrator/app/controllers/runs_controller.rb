@@ -39,7 +39,6 @@ class RunsController < ApplicationController
       return
     end
 
-    @run.fail_if_unclaimed!
     @tasks_by_status = @run.tasks.group(:status).count
   end
 

@@ -49,18 +49,6 @@ class RunTest < ActiveSupport::TestCase
     assert_equal "cancelled", run.status
   end
 
-  test "fail_if_unclaimed! fails a stalled run" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
-    run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
-    run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
-    run.update_column(:created_at, 11.minutes.ago)
-
-    run.fail_if_unclaimed!
-
-    assert run.reload.failed?
-    assert_equal ["failed"], run.tasks.pluck(:status).uniq
-  end
-
   test "cancel! cancels all pending tasks" do
     run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
     task1 = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)

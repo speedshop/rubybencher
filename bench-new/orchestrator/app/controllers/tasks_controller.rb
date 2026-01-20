@@ -13,7 +13,6 @@ class TasksController < ApplicationController
       return
     end
 
-    @run.fail_if_unclaimed!
     @tasks = @run.tasks.order(:id)
   end
 
@@ -29,8 +28,6 @@ class TasksController < ApplicationController
       render json: { error: "Run not found" }, status: :not_found
       return
     end
-
-    @run.fail_if_unclaimed!
 
     unless @run.running?
       @status = "done"
