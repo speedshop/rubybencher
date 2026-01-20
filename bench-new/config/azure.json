@@ -1,15 +1,10 @@
 {
   "ruby_version": "3.4.7",
-  "runs_per_instance_type": 1,
+  "runs_per_instance_type": 2,
   "azure": [
     {
       "instance_type": "Standard_D2pls_v6",
       "alias": "d2pls-v6",
-      "arch": "arm64"
-    },
-    {
-      "instance_type": "Standard_D2plds_v6",
-      "alias": "d2plds-v6",
       "arch": "arm64"
     },
     {

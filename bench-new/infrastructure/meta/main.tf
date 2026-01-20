@@ -49,10 +49,30 @@ resource "aws_s3_bucket_cors_configuration" "results" {
 
   cors_rule {
     allowed_headers = ["*"]
-    allowed_methods = ["PUT", "GET"]
+    allowed_methods = ["PUT", "GET", "HEAD"]
     allowed_origins = ["*"]
     max_age_seconds = 3600
   }
+}
+
+# Bucket policy to allow public read access to results
+resource "aws_s3_bucket_policy" "results" {
+  bucket = aws_s3_bucket.results.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = ["s3:GetObject", "s3:HeadObject"]
+        Resource  = "${aws_s3_bucket.results.arn}/results/*"
+      }
+    ]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.results]
 }
 
 # VPC
