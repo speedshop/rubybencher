@@ -81,7 +81,9 @@ end
 
 function run_logged_command_bg -a log_file
     set -l cmd $argv[2..-1]
-    run_logged_command "$log_file" $cmd &
+    # Run in background but discard stdout since tee already logs
+    # Only return the PID
+    run_logged_command "$log_file" $cmd > /dev/null &
     set -l pid $last_pid
     echo $pid
 end
