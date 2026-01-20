@@ -58,6 +58,7 @@ function prepare_azure_task_runners
     end
 
     set -g AZURE_TF_DIR "$BENCH_DIR/infrastructure/azure"
+    set -g AZURE_TF_LOG_FILE (log_path_for "azure-terraform")
     set -l meta_tf_dir "$BENCH_DIR/infrastructure/meta"
 
     if not test -d "$AZURE_TF_DIR"
@@ -179,7 +180,8 @@ function prepare_azure_task_runners
 
     # Initialize terraform if needed
     if not test -d "$AZURE_TF_DIR/.terraform"
-        run_with_spinner "Initializing Azure task runner Terraform..." terraform -chdir="$AZURE_TF_DIR" init
+        set -l init_cmd (wrap_command_with_logging "$AZURE_TF_LOG_FILE" terraform -chdir="$AZURE_TF_DIR" init)
+        run_with_spinner "Initializing Azure task runner Terraform..." fish -c "$init_cmd"
         if test $status -ne 0
             log_error "Azure terraform init failed"
             exit 1

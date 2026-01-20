@@ -11,7 +11,6 @@ function print_usage
     echo "  --resume-run ID|latest    Resume an existing run ID"
     echo "  --mock                    Run mock benchmark instead of real benchmark"
     echo "  --debug                   Enable debug mode (verbose output, keeps task runners alive)"
-    echo "  --non-interactive         No tmux/prompts; prints JSON summary"
     echo "  -h, --help                Show this help"
     echo ""
     echo "Environment Variables:"
@@ -57,9 +56,6 @@ function parse_args
             case --debug
                 set -g DEBUG true
                 set -g CLI_DEBUG true
-            case --non-interactive
-                set -g NON_INTERACTIVE true
-                set -g CLI_NON_INTERACTIVE true
             case -h --help
                 print_usage
                 exit 0
@@ -137,13 +133,6 @@ function load_config_options
         set -l config_val (cat "$CONFIG_FILE" | jq -r '.debug // false')
         if test "$config_val" = "true"
             set -g DEBUG true
-        end
-    end
-
-    if test "$CLI_NON_INTERACTIVE" = false
-        set -l config_val (cat "$CONFIG_FILE" | jq -r '.non_interactive // false')
-        if test "$config_val" = "true"
-            set -g NON_INTERACTIVE true
         end
     end
 

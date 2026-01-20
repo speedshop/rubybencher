@@ -100,16 +100,14 @@ function poll_run_status
             --argjson completed $completed \
             --argjson failed $failed
 
-        # Emit a stable, single-line progress status in non-interactive mode
-        if set -q NON_INTERACTIVE; and test "$NON_INTERACTIVE" = true
-            set -l done_count (math $completed + $failed)
-            set -l progress 0
-            if test $total -gt 0
-                set progress (math "round($done_count * 100 / $total)")
-            end
-
-            echo "[$progress%] Pending: $pending | Running: "(math $claimed + $running)" | ✓ $completed | ✗ $failed"
+        # Emit a stable, single-line progress status
+        set -l done_count (math $completed + $failed)
+        set -l progress 0
+        if test $total -gt 0
+            set progress (math "round($done_count * 100 / $total)")
         end
+
+        echo "[$progress%] Pending: $pending | Running: "(math $claimed + $running)" | ✓ $completed | ✗ $failed"
 
         if test "$run_status" = "completed"; or test "$run_status" = "cancelled"; or test "$run_status" = "failed"
             if test "$run_status" = "failed"
@@ -196,21 +194,6 @@ function cleanup_on_interrupt
     echo ""
     log_warning "Interrupted!"
 
-    if test "$NON_INTERACTIVE" = false
-        set -l cleanup_choice (gum choose \
-            "Everything" \
-            "Task runners for run $RUN_ID" \
-            "Nothing")
-
-        switch "$cleanup_choice"
-            case "Everything"
-                fish "$BENCH_DIR/nuke/nuke.fish" -f
-            case "Task runners for run $RUN_ID"
-                fish "$BENCH_DIR/nuke/nuke.fish" --run-id "$RUN_ID"
-            case '*'
-                log_info "Skipping cleanup"
-        end
-    end
-
+    log_info "Skipping cleanup; run nuke if needed"
     exit 130
 end

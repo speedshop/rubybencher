@@ -48,6 +48,7 @@ function prepare_aws_task_runners
     log_info "Preparing AWS task runner infrastructure..."
 
     set -g AWS_TF_DIR "$BENCH_DIR/infrastructure/aws"
+    set -g AWS_TF_LOG_FILE (log_path_for "aws-terraform")
     set -l meta_tf_dir "$BENCH_DIR/infrastructure/meta"
 
     if not test -d "$AWS_TF_DIR"
@@ -127,7 +128,8 @@ function prepare_aws_task_runners
 
     # Initialize terraform if needed
     if not test -d "$AWS_TF_DIR/.terraform"
-        run_with_spinner "Initializing AWS task runner Terraform..." terraform -chdir="$AWS_TF_DIR" init
+        set -l init_cmd (wrap_command_with_logging "$AWS_TF_LOG_FILE" terraform -chdir="$AWS_TF_DIR" init)
+        run_with_spinner "Initializing AWS task runner Terraform..." fish -c "$init_cmd"
         if test $status -ne 0
             log_error "AWS terraform init failed"
             exit 1

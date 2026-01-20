@@ -236,11 +236,6 @@ function wait_for_orchestrator
         if test "$response" = "200"
             log_success "Orchestrator is ready"
             log_info "Orchestrator URL: $ORCHESTRATOR_URL"
-            if not set -q NON_INTERACTIVE; or test "$NON_INTERACTIVE" != true
-                if command -q open
-                    open "$ORCHESTRATOR_URL"
-                end
-            end
             return 0
         end
 

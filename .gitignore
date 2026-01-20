@@ -27,6 +27,7 @@ site/public/
 status/
 orchestrator.json
 status.json
+logs/
 *.log
 
 # Local temp

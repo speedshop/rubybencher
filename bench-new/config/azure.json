@@ -1,10 +1,15 @@
 {
-  "ruby_version": "4.0.0",
+  "ruby_version": "3.4.7",
   "runs_per_instance_type": 1,
   "azure": [
     {
       "instance_type": "Standard_D2pls_v6",
       "alias": "d2pls-v6",
+      "arch": "arm64"
+    },
+    {
+      "instance_type": "Standard_D2plds_v6",
+      "alias": "d2plds-v6",
       "arch": "arm64"
     },
     {
@@ -21,11 +26,6 @@
       "instance_type": "Standard_F2als_v6",
       "alias": "f2als-v6",
       "arch": "amd64"
-    },
-    {
-      "instance_type": "Standard_D2pls_v5",
-      "alias": "d2pls-v5",
-      "arch": "arm64"
     }
   ]
 }
