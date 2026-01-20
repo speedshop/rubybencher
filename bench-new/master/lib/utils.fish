@@ -60,7 +60,9 @@ function log_targets_for -a log_file
         end
     end
 
-    echo $targets
+    # Use printf to return each element on its own line
+    # This ensures command substitution creates separate array elements
+    printf '%s\n' $targets
 end
 
 function run_logged_command -a log_file
