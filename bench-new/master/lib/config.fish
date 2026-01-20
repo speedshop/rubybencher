@@ -177,7 +177,8 @@ function get_task_runner_cap
     set -l provider $argv[1]
 
     # First check for provider object style: aws.task_runners.count
-    set -l provider_obj_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" '.[$p].task_runners.count // empty')
+    # Only works if provider config is an object, not an array
+    set -l provider_obj_count (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .[$p] | type == "object" then .[$p].task_runners.count // empty else empty end')
     if test -n "$provider_obj_count"; and test "$provider_obj_count" != "null"
         echo $provider_obj_count
         return
@@ -200,7 +201,8 @@ function get_runs_per_instance_type
     set -l provider $argv[1]
 
     # First check for provider object style: aws.runs_per_instance_type
-    set -l provider_runs (cat "$CONFIG_FILE" | jq -r --arg p "$provider" '.[$p].runs_per_instance_type // empty')
+    # Only works if provider config is an object, not an array
+    set -l provider_runs (cat "$CONFIG_FILE" | jq -r --arg p "$provider" 'if .[$p] | type == "object" then .[$p].runs_per_instance_type // empty else empty end')
     if test -n "$provider_runs"; and test "$provider_runs" != "null"
         echo $provider_runs
         return

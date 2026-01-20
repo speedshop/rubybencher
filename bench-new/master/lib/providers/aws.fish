@@ -89,8 +89,8 @@ function prepare_aws_task_runners
     set -l instance_count_map "{"
     set -l first true
     for i in (seq 0 (math (cat "$CONFIG_FILE" | jq "$instances_path | length") - 1))
-        set -l alias_name (cat "$CONFIG_FILE" | jq -r "$instances_path[$i].alias")
-        set -l instance_type (cat "$CONFIG_FILE" | jq -r "$instances_path[$i].instance_type")
+        set -l alias_name (cat "$CONFIG_FILE" | jq -r "$instances_path"'['"$i"'].alias')
+        set -l instance_type (cat "$CONFIG_FILE" | jq -r "$instances_path"'['"$i"'].instance_type')
         set -l vcpu (get_vcpu_count $instance_type)
         set -l effective_vcpu $vcpu
 
