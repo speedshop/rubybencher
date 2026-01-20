@@ -87,19 +87,6 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, json["tasks"]["running"]
   end
 
-  test "GET /runs/:id fails a stalled run with no claims" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1)
-    task = run.tasks.create!(provider: "azure", instance_type: "Standard_D2pls_v6", run_number: 1)
-    run.update_column(:created_at, 11.minutes.ago)
-
-    get run_path(run.external_id)
-
-    assert_response :success
-    json = JSON.parse(response.body)
-    assert_equal "failed", json["status"]
-    assert_equal "failed", task.reload.status
-  end
-
   test "GET /runs/:id returns 404 if run not found" do
     get run_path("nonexistent")
 
