@@ -158,15 +158,12 @@ class StorageService
     end
 
     def presign_get(key)
-      # Return direct S3 URL (bucket is public with random name for security through obscurity)
-      # Bucket allows public GetObject and HeadObject on results/* paths
-      if @endpoint.present?
-        # For local/test environments with custom endpoint
-        "#{@endpoint}/#{@bucket}/#{key}"
-      else
-        # For production AWS S3
-        "https://#{@bucket}.s3.#{@region}.amazonaws.com/#{key}"
-      end
+      download_presigner.presigned_url(
+        :get_object,
+        bucket: @bucket,
+        key: key,
+        expires_in: 3600
+      )
     end
   end
 end

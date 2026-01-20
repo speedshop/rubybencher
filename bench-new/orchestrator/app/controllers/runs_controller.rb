@@ -39,6 +39,7 @@ class RunsController < ApplicationController
       return
     end
 
+    @run.fail_if_stalled!
     @tasks_by_status = @run.tasks.group(:status).count
   end
 

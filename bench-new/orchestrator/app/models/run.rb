@@ -8,6 +8,8 @@ class Run < ApplicationRecord
 
   before_validation :set_external_id, on: :create
 
+  STALLED_RUN_TIMEOUT = 10.minutes
+
   scope :running, -> { where(status: "running") }
 
   def self.current
@@ -40,6 +42,22 @@ class Run < ApplicationRecord
       update!(status: "cancelled")
     end
     GzipBuilderJob.perform_later(id)
+  end
+
+  def fail_if_stalled!
+    return unless running?
+    return unless created_at <= STALLED_RUN_TIMEOUT.ago
+    return if tasks.where.not(status: "pending").exists?
+
+    transaction do
+      tasks.pending.update_all(
+        status: "failed",
+        error_type: "stalled",
+        error_message: "No task claims received within #{STALLED_RUN_TIMEOUT.in_minutes} minutes",
+        heartbeat_status: "error"
+      )
+      update!(status: "failed")
+    end
   end
 
   def maybe_finalize!

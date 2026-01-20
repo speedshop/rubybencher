@@ -10,6 +10,7 @@ function print_usage
     echo "  --reuse-orchestrator      Reuse orchestrator from orchestrator.json"
     echo "  --resume-run ID|latest    Resume an existing run ID"
     echo "  --mock                    Run mock benchmark instead of real benchmark"
+    echo "  --non-interactive         Skip tmux, suitable for CI"
     echo "  --debug                   Enable debug mode (verbose output, keeps task runners alive)"
     echo "  -h, --help                Show this help"
     echo ""
@@ -53,6 +54,8 @@ function parse_args
             case --mock
                 set -g MOCK_BENCHMARK true
                 set -g CLI_MOCK_BENCHMARK true
+            case --non-interactive
+                set -g NON_INTERACTIVE true
             case --debug
                 set -g DEBUG true
                 set -g CLI_DEBUG true
