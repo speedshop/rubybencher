@@ -72,7 +72,7 @@ function run_logged_command -a log_file
         return $status
     end
 
-    $cmd 2>&1 | tee -a $tee_targets
+    begin; $cmd; end 2>&1 | tee -a $tee_targets
     set -l cmd_status $pipestatus[1]
     return $cmd_status
 end

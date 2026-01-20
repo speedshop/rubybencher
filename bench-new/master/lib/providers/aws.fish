@@ -128,8 +128,8 @@ function prepare_aws_task_runners
 
     # Initialize terraform if needed
     if not test -d "$AWS_TF_DIR/.terraform"
-        set -l init_cmd (wrap_command_with_logging "$AWS_TF_LOG_FILE" terraform -chdir="$AWS_TF_DIR" init)
-        run_with_spinner "Initializing AWS task runner Terraform..." fish -c "$init_cmd"
+        log_info "Initializing AWS task runner Terraform..."
+        run_logged_command "$AWS_TF_LOG_FILE" terraform -chdir="$AWS_TF_DIR" init
         if test $status -ne 0
             log_error "AWS terraform init failed"
             exit 1

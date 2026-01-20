@@ -52,8 +52,8 @@ function setup_infrastructure
 
     # Initialize terraform if needed
     if not test -d "$tf_dir/.terraform"
-        set -l init_cmd (wrap_command_with_logging "$META_TF_LOG_FILE" terraform -chdir="$tf_dir" init)
-        run_with_spinner "Initializing meta Terraform..." fish -c "$init_cmd"
+        log_info "Initializing meta Terraform..."
+        run_logged_command "$META_TF_LOG_FILE" terraform -chdir="$tf_dir" init
         if test $status -ne 0
             log_error "Meta terraform init failed"
             exit 1
