@@ -173,6 +173,12 @@ function poll_tasks_subset -a provider instance_types_json
             echo "[batch] Pending: $pending | Running: "(math $claimed + $running)" | ✓ $completed | ✗ $failed"
         end
 
+        if test $total -eq 0
+            log_warning "No matching tasks found for this batch yet; waiting"
+            sleep $poll_interval
+            continue
+        end
+
         set -l incomplete (math $pending + $claimed + $running)
         if test $incomplete -eq 0
             log_success "Batch tasks complete ($completed completed, $failed failed)"
