@@ -15,7 +15,7 @@ echo -e "\n${YELLOW}═══ E2E Tests: Background Jobs ═══${NC}\n"
 # Test 1: Task completion triggers GzipBuilderJob
 test_step "Task completion triggers run finalization"
 
-response=$(api_post "/runs" '{"ruby_version":"3.4.7","runs_per_instance_type":1,"local":["e2e-instance"]}')
+response=$(api_post "/runs" '{"ruby_version":"3.4.7","per_instance_type":{"tasks":1,"instances":1},"local":["e2e-instance"]}')
 RUN_ID=$(echo "$response" | jq -r '.run_id')
 RUNNER_ID="e2e-$(date +%s)"
 
@@ -38,7 +38,7 @@ test_pass
 # Test 2: Heartbeat timeout triggers task failure
 test_step "Heartbeat timeout fails task and completes run"
 
-response=$(api_post "/runs" '{"ruby_version":"3.4.7","runs_per_instance_type":1,"local":["timeout-instance"]}')
+response=$(api_post "/runs" '{"ruby_version":"3.4.7","per_instance_type":{"tasks":1,"instances":1},"local":["timeout-instance"]}')
 TIMEOUT_RUN_ID=$(echo "$response" | jq -r '.run_id')
 TIMEOUT_RUNNER="timeout-$(date +%s)"
 
@@ -70,7 +70,7 @@ test_pass
 # Test 3: Mixed task outcomes
 test_step "Multiple tasks: complete some, timeout others"
 
-response=$(api_post "/runs" '{"ruby_version":"3.4.7","runs_per_instance_type":2,"local":["multi-instance"]}')
+response=$(api_post "/runs" '{"ruby_version":"3.4.7","per_instance_type":{"tasks":2,"instances":1},"local":["multi-instance"]}')
 MULTI_RUN_ID=$(echo "$response" | jq -r '.run_id')
 assert_equals "2" "$(echo "$response" | jq -r '.tasks_created')" "Two tasks created"
 

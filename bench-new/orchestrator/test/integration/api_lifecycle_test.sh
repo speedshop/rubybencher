@@ -85,7 +85,7 @@ set status_code (curl -s -o $tmpfile -w "%{http_code}" \
     -H "Content-Type: application/json" \
     -d '{
         "ruby_version": "3.4.7",
-        "runs_per_instance_type": 1,
+        "per_instance_type": { "tasks": 1, "instances": 1 },
         "local": ["test-instance"]
     }' \
     $BASE_URL/runs)
@@ -264,7 +264,7 @@ set status_code (curl -s -o $tmpfile -w "%{http_code}" \
     -H "Content-Type: application/json" \
     -d '{
         "ruby_version": "3.4.7",
-        "runs_per_instance_type": 1,
+        "per_instance_type": { "tasks": 1, "instances": 1 },
         "local": ["test"]
     }' \
     $BASE_URL/runs)
@@ -290,7 +290,7 @@ curl -s -o $tmpfile \
     -H "Content-Type: application/json" \
     -d '{
         "ruby_version": "3.4.7",
-        "runs_per_instance_type": 1,
+        "per_instance_type": { "tasks": 1, "instances": 1 },
         "local": ["test-instance"]
     }' \
     $BASE_URL/runs
