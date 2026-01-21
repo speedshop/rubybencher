@@ -17,7 +17,7 @@ run "validation" {
     azure_region  = "northcentralus"
     run_id        = "test-run"
     ruby_version  = "3.4.0"
-    ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDtestkey"
+    ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5ugLHKUBe1LIGfFyK/VGYRYNT8n1RkR6BPm1n0T9Gjvhdb34I2Im121swqHKXaz2xWzmjEwbK3KjOeI6KCRpQOOOY5QQZM2PblEzC/nz81bAOpfgBofUWRmCSFZnVJ7OT4wKjbUVCW7IqLCnN10zH118h+zeP+p3MZ+T7mvIxJFgwseMfflf3CI0uDxdpkNxB94hRVYG2MV9ZXl+IXMun+C8JkZDLGflYpraPFggtUhssL0NA+s/sFo4ObVkunnIBx71gkq8stWFr/sY+mBghcanGGPnfDNaDTLmnSh4dJatcvMp5DDkRfwPUresr7oYHRjeG41gWCKN8lrImgOmP nateberkopec@Nates-MBP.localdomain"
 
     instance_types = [
       {
