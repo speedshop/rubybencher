@@ -79,3 +79,13 @@ output "allowed_ssh_cidr" {
   description = "CIDR block allowed for SSH access"
   value       = var.allowed_ssh_cidr
 }
+
+output "ecr_repository_url" {
+  description = "URL of the ECR repository for task runner images"
+  value       = aws_ecr_repository.task_runner.repository_url
+}
+
+output "ecr_repository_name" {
+  description = "Name of the ECR repository for task runner images"
+  value       = aws_ecr_repository.task_runner.name
+}

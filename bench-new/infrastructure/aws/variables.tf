@@ -42,6 +42,11 @@ variable "ruby_version" {
   type        = string
 }
 
+variable "task_runner_image" {
+  description = "ECR image URL for the task runner"
+  type        = string
+}
+
 variable "instance_types" {
   description = "List of instance type configurations"
   type = list(object({

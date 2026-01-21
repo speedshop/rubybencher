@@ -111,6 +111,16 @@ function main
     # Get orchestrator configuration
     get_orchestrator_config
 
+    # Build and push task runner image to ECR (AWS only)
+    if test "$LOCAL_ORCHESTRATOR" != true; and test "$SKIP_INFRA" != true
+        if contains aws $pre_providers
+            if not build_and_push_task_runner_image
+                log_error "Failed to build task runner image"
+                exit 1
+            end
+        end
+    end
+
     # Prepare and run cloud provider terraforms
     # (Must happen after meta terraform completes since providers need its outputs)
     set -l provider_job_pids
