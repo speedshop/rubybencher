@@ -19,6 +19,18 @@ function check_dependencies
         if not command -q terraform
             set missing_deps $missing_deps terraform
         end
+
+        # Check for docker and buildx (needed for ECR image builds)
+        if not command -q docker
+            set missing_deps $missing_deps docker
+        else if not docker buildx version >/dev/null 2>&1
+            set missing_deps $missing_deps "docker-buildx"
+        end
+
+        # Check for AWS CLI (needed for ECR login)
+        if not command -q aws
+            set missing_deps $missing_deps aws
+        end
     end
 
     if test (count $missing_deps) -gt 0
