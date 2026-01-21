@@ -111,3 +111,35 @@ function destroy_terraform_providers_only
     # NOTE: Meta infrastructure is NEVER destroyed in providers-only mode
     log_info "Meta infrastructure preserved (orchestrator/bastion/S3/VPC)"
 end
+
+function delete_terraform_state
+    # Delete local Terraform state files (thermonuclear mode)
+    log_warning "Deleting local Terraform state files..."
+
+    set -l state_dirs "$BENCH_DIR/infrastructure/aws" "$BENCH_DIR/infrastructure/azure" "$BENCH_DIR/infrastructure/meta"
+
+    for tf_dir in $state_dirs
+        if test -d "$tf_dir"
+            log_info "Checking $tf_dir..."
+
+            if test -f "$tf_dir/terraform.tfstate"
+                rm -f "$tf_dir/terraform.tfstate"
+                log_info "  Deleted terraform.tfstate"
+            end
+
+            if test -f "$tf_dir/terraform.tfstate.backup"
+                rm -f "$tf_dir/terraform.tfstate.backup"
+                log_info "  Deleted terraform.tfstate.backup"
+            end
+        else
+            log_info "Directory not found: $tf_dir"
+        end
+    end
+
+    log_success "Local Terraform state files deleted"
+
+    log_warning ""
+    log_warning "IMPORTANT: Cloud resources may still exist!"
+    log_warning "Manual cleanup of AWS/Azure resources may be required."
+    log_warning "Run without --thermonuclear to destroy cloud resources via Terraform."
+end
