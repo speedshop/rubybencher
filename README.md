@@ -55,7 +55,7 @@ Create a config file (see `bench-new/config/aws-full.json` for an example):
 ```json
 {
   "ruby_version": "3.4.7",
-  "runs_per_instance_type": 3,
+  "per_instance_type": { "tasks": 3, "instances": 1 },
   "aws": [
     {
       "instance_type": "c8g.medium",
@@ -112,11 +112,11 @@ The config file controls what gets benchmarked:
 | Field | Description |
 |-------|-------------|
 | `ruby_version` | Ruby version to test (e.g., "3.4.7") |
-| `runs_per_instance_type` | How many times to run benchmarks per instance |
+| `per_instance_type.tasks` | Tasks to run per instance type |
+| `per_instance_type.instances` | Instances to start per instance type |
 | `aws` | Array of AWS instance objects |
 | `azure` | Array of Azure instance objects |
 | `local` | Array of local Docker instance objects |
-| `task_runners.count` | Max task runners per instance (local defaults to 1; cloud defaults to vCPU count) |
 
 Each instance object has:
 - `instance_type`: The cloud provider's instance type name (or "docker" for local)
@@ -127,7 +127,7 @@ Each instance object has:
 ```json
 {
   "ruby_version": "3.4.7",
-  "runs_per_instance_type": 3,
+  "per_instance_type": { "tasks": 3, "instances": 1 },
   "aws": [
     { "instance_type": "c8g.medium", "alias": "c8g" },
     { "instance_type": "c7g.medium", "alias": "c7g" }

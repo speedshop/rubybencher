@@ -1,7 +1,9 @@
 json.run_id @run.external_id
 json.status @run.status
 json.ruby_version @run.ruby_version
-json.runs_per_instance_type @run.runs_per_instance_type
+json.per_instance_type do
+  json.tasks @run.tasks_per_instance_type
+end
 
 json.tasks do
   json.total @run.tasks.count

@@ -21,7 +21,7 @@ function start_local_task_runners
     end
 
     # Get the number of task runners to start for local provider
-    set -l runner_count (get_task_runner_count "local")
+    set -l runner_count (get_per_instance_type_instances "local")
     log_info "Starting $runner_count task runner(s) per instance type..."
 
     # Start task runners for each instance type in the local config

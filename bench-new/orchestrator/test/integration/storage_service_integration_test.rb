@@ -6,7 +6,7 @@ require "tempfile"
 class StorageServiceIntegrationTest < ActiveSupport::TestCase
   setup do
     StorageService.reset!
-    @run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1)
+    @run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 1)
     @task = @run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     @task.claim!("runner-1")
   end

@@ -2,7 +2,7 @@ require "test_helper"
 
 class TaskTest < ActiveSupport::TestCase
   def setup
-    @run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
+    @run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 3)
   end
 
   test "creates task with default pending status" do

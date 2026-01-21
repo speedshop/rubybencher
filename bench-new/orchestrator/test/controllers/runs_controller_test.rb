@@ -11,7 +11,7 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
     post runs_path,
       params: {
         ruby_version: "3.4.7",
-        runs_per_instance_type: 2,
+        per_instance_type: { tasks: 2, instances: 1 },
         aws: [ "c8g.medium" ],
         azure: [ "Standard_D2pls_v6" ]
       },
@@ -28,12 +28,12 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
     run = Run.find_by(external_id: json["run_id"])
     assert run.present?
     assert_equal "3.4.7", run.ruby_version
-    assert_equal 2, run.runs_per_instance_type
+    assert_equal 2, run.tasks_per_instance_type
   end
 
   test "POST /runs returns 400 if no instance types specified" do
     post runs_path,
-      params: { ruby_version: "3.4.7", runs_per_instance_type: 3 },
+      params: { ruby_version: "3.4.7", per_instance_type: { tasks: 3, instances: 1 } },
       headers: { "Authorization" => "Bearer #{@api_key}" },
       as: :json
 
@@ -42,7 +42,7 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
 
   test "POST /runs requires authentication" do
     post runs_path,
-      params: { ruby_version: "3.4.7", runs_per_instance_type: 3, aws: [ "c8g.medium" ] },
+      params: { ruby_version: "3.4.7", per_instance_type: { tasks: 3, instances: 1 }, aws: [ "c8g.medium" ] },
       as: :json
 
     assert_response :unauthorized
@@ -54,7 +54,7 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
     post runs_path,
       params: {
         ruby_version: "3.4.7",
-        runs_per_instance_type: 1,
+        per_instance_type: { tasks: 1, instances: 1 },
         run_id: client_run_id,
         aws: [ "c8g.medium" ]
       },
@@ -71,7 +71,7 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "GET /runs/:id returns run status" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 2)
     run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1, status: "completed")
     run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2, status: "running")
 
@@ -87,6 +87,19 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, json["tasks"]["running"]
   end
 
+  test "GET /runs/:id fails a stalled run with no claims" do
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 1)
+    task = run.tasks.create!(provider: "azure", instance_type: "Standard_D2pls_v6", run_number: 1)
+    run.update_column(:created_at, 11.minutes.ago)
+
+    get run_path(run.external_id)
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal "failed", json["status"]
+    assert_equal "failed", task.reload.status
+  end
+
   test "GET /runs/:id returns 404 if run not found" do
     get run_path("nonexistent")
 
@@ -94,7 +107,7 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "POST /runs/:id/stop cancels the run" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 3)
 
     post stop_run_path(run.external_id),
       headers: { "Authorization" => "Bearer #{@api_key}" },
@@ -106,7 +119,7 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "POST /runs/:id/stop cancels pending tasks and enqueues gzip builder" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 3)
     pending_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     claimed_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 2)
     claimed_task.claim!("runner-1")
@@ -127,7 +140,7 @@ class RunsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "POST /runs/:id/stop requires authentication" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 3)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 3)
 
     post stop_run_path(run.external_id), as: :json
 

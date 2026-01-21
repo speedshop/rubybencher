@@ -88,7 +88,7 @@ curl -X POST http://localhost:3000/runs \
   -H "Content-Type: application/json" \
   -d '{
     "ruby_version": "3.4.1",
-    "runs_per_instance_type": 3,
+    "per_instance_type": { "tasks": 3, "instances": 1 },
     "aws": ["c7g.medium", "c7g.large"],
     "azure": ["Standard_D2pls_v6"]
   }'

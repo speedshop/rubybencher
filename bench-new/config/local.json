@@ -1,8 +1,8 @@
 {
   "ruby_version": "3.4.7",
-  "runs_per_instance_type": 3,
-  "task_runners": {
-    "count": 3
+  "per_instance_type": {
+    "tasks": 3,
+    "instances": 3
   },
   "local": [
     {

@@ -2,7 +2,7 @@ require "test_helper"
 
 class HeartbeatMonitorJobTest < ActiveJob::TestCase
   test "marks stale tasks as failed" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 2)
     task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     task.claim!("runner-123")
     task.update!(heartbeat_at: 3.minutes.ago)
@@ -15,7 +15,7 @@ class HeartbeatMonitorJobTest < ActiveJob::TestCase
   end
 
   test "does not mark recent heartbeats as failed" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 2)
     task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     task.claim!("runner-123")
     task.update!(heartbeat_at: 1.minute.ago)
@@ -27,7 +27,7 @@ class HeartbeatMonitorJobTest < ActiveJob::TestCase
   end
 
   test "enqueues gzip builder when last active task times out" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 2)
 
     completed_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     completed_task.claim!("runner-1")
@@ -43,7 +43,7 @@ class HeartbeatMonitorJobTest < ActiveJob::TestCase
   end
 
   test "does not enqueue gzip builder when other tasks are still active" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 2)
 
     active_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     active_task.claim!("runner-1")
@@ -59,7 +59,7 @@ class HeartbeatMonitorJobTest < ActiveJob::TestCase
   end
 
   test "does not enqueue gzip builder when pending tasks remain" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 2)
 
     pending_task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
 
@@ -76,12 +76,12 @@ class HeartbeatMonitorJobTest < ActiveJob::TestCase
   end
 
   test "handles multiple runs with stale tasks independently" do
-    run1 = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1)
+    run1 = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 1)
     task1 = run1.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     task1.claim!("runner-1")
     task1.update!(heartbeat_at: 3.minutes.ago)
 
-    run2 = Run.create!(ruby_version: "3.4.8", runs_per_instance_type: 1)
+    run2 = Run.create!(ruby_version: "3.4.8", tasks_per_instance_type: 1)
     task2 = run2.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     task2.claim!("runner-2")
     task2.update!(heartbeat_at: 3.minutes.ago)

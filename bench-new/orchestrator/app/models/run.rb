@@ -2,7 +2,7 @@ class Run < ApplicationRecord
   has_many :tasks, dependent: :destroy
 
   validates :ruby_version, presence: true
-  validates :runs_per_instance_type, presence: true, numericality: { greater_than: 0 }
+  validates :tasks_per_instance_type, presence: true, numericality: { greater_than: 0 }
   validates :status, presence: true, inclusion: { in: %w[running completed cancelled failed] }
   validates :external_id, presence: true, uniqueness: true
 

@@ -19,7 +19,7 @@ class RunsController < ApplicationController
 
     @run = Run.new(
       ruby_version: params[:ruby_version],
-      runs_per_instance_type: params[:runs_per_instance_type],
+      tasks_per_instance_type: tasks_per_instance_type(params),
       external_id: params[:run_id]
     )
 
@@ -68,6 +68,13 @@ class RunsController < ApplicationController
     Run.find_by(external_id: params[:id]) || Run.find_by(id: params[:id])
   end
 
+  def tasks_per_instance_type(params)
+    per_instance_type = params[:per_instance_type]
+    return unless per_instance_type.is_a?(ActionController::Parameters) || per_instance_type.is_a?(Hash)
+
+    per_instance_type[:tasks] || per_instance_type["tasks"]
+  end
+
   def parse_instance_types(params)
     instance_types = []
 
@@ -96,12 +103,12 @@ class RunsController < ApplicationController
     tasks = []
 
     instance_types.each do |config|
-      (1..run.runs_per_instance_type).each do |run_number|
+      (1..run.tasks_per_instance_type).each do |task_number|
         tasks << run.tasks.create!(
           provider: config[:provider],
           instance_type: config[:instance_type],
           instance_type_alias: config[:instance_type_alias],
-          run_number: run_number,
+          run_number: task_number,
           status: "pending"
         )
       end

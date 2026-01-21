@@ -29,10 +29,7 @@ Each provider must be registered and implement a setup function:
 - The provider must read its config from `CONFIG_FILE` (JSON).
 - The provider must use `RUN_ID`, `ORCHESTRATOR_URL`, and `API_KEY` from the master script.
 - If the provider is cloud-based, it must be able to run in parallel with `wait_for_orchestrator`.
-- The provider must respect `task_runners.count` as a **cap** on containers per instance:
-  - Default for cloud: **vCPU count**
-  - Default for local: **1**
-  - If `task_runners.count` is set, use `min(vCPU, count)` (never less than 1)
+- The provider must start one task runner per vCPU (minimum 1).
 
 ### Resume behavior (status/)
 
@@ -72,9 +69,10 @@ The master script:
 
 ### 2) Config schema
 
-Add a provider array to config JSON:
+Add `per_instance_type` and a provider array to config JSON:
 
 ```json
+"per_instance_type": { "tasks": 3, "instances": 2 },
 "<provider>": [
   { "instance_type": "your-instance-type", "alias": "short-name" }
 ]
@@ -88,9 +86,10 @@ Ensure `bench-new/config/example.json` includes:
 
 Your provider must compute:
 
+- `tasks_per_instance_type = per_instance_type.tasks` (used by the orchestrator)
 - `vCPU count` per instance type
-- `effective_vcpu = max(1, min(vcpu, task_runners.count))`
-- `instances_needed = ceil(runs_per_instance_type / effective_vcpu)`
+- `instances_needed = per_instance_type.instances`
+- `vcpu_count = max(1, vcpu)`
 
 This drives:
 - `vcpu_count` map (containers per instance)
@@ -168,7 +167,7 @@ Reference implementations:
 
 ## Common Pitfalls
 
-- Forgetting to cap `vcpu_count` with `task_runners.count`
+- Forgetting to wire `per_instance_type.instances` into `instance_count`
 - Forgetting to add provider to `provider_list`
 - Missing `terraform_remote_state` outputs for orchestrator URL / API key
 - Running cloud provider with `--local-orchestrator`
