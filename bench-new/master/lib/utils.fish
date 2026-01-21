@@ -84,13 +84,16 @@ function run_logged_command_bg -a log_file
     set -l tee_targets (log_targets_for "$log_file")
 
     # Run command in background subshell
-    # Fish doesn't capture PID when backgrounding functions, so we use fish -c
+    # Use eval to preserve environment variables (AWS credentials from fnox exec)
+    # Fish's -c spawns a new shell and loses parent environment, so we use eval with &
     if test (count $tee_targets) -eq 0
-        fish -c "$(string escape -- $cmd | string join ' ')" &
+        eval "$cmd" &
     else
+        # Join targets to string and evaluate the whole pipeline
+        # This ensures the command runs in the current environment
         set -l targets_str (string join ' ' (string escape -- $tee_targets))
-        set -l cmd_str (string escape -- $cmd | string join ' ')
-        fish -c "begin; $cmd_str; end 2>&1 | tee -a $targets_str" &
+        set -l cmd_joined (string join ' ' -- $cmd)
+        eval "$cmd_joined 2>&1 | tee -a $targets_str" &
     end
     echo $last_pid
 end
