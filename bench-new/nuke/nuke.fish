@@ -23,8 +23,9 @@ source "$LIB_DIR/docker.fish"
 source "$LIB_DIR/files.fish"
 
 function confirm_destruction
+    set -l skip_confirm false
     if test "$FORCE" = true
-        return 0
+        set skip_confirm true
     end
 
     set -l scope "ALL rb_managed resources"
@@ -116,6 +117,10 @@ function confirm_destruction
             "• Local Docker containers" \
             "" \
             "This action cannot be undone!"
+    end
+
+    if test "$skip_confirm" = true
+        return 0
     end
 
     echo ""
