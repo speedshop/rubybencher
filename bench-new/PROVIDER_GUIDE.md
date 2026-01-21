@@ -232,3 +232,13 @@ function setup_<provider>_task_runners
     # terraform init/apply...
 end
 ```
+
+<!-- TODO: Update this guide to document common.fish utilities:
+     - provider_validate_not_local_orchestrator
+     - provider_build_vcpu_map / provider_build_instance_count_map
+     - provider_tf_init_if_needed
+     - provider_task_runners_exist / provider_run_id_matches
+     - provider_show_instances / provider_show_created_instances
+     - provider_update_status
+     - provider_terraform_apply
+-->
