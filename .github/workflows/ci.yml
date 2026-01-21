@@ -149,11 +149,23 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Validate Infrastructure Configs
+      - name: Validate Meta Infrastructure Configs
         run: |
           cd bench-new/infrastructure/meta
           terraform init -backend=false
           terraform validate
+
+      - name: Test AWS Infrastructure Module
+        run: |
+          cd bench-new/infrastructure/aws
+          terraform init -backend=false
+          terraform test
+
+      - name: Test Azure Infrastructure Module
+        run: |
+          cd bench-new/infrastructure/azure
+          terraform init -backend=false
+          terraform test
 
   site-generator:
     runs-on: ubuntu-latest
