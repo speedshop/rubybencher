@@ -78,11 +78,8 @@ function prepare_aws_task_runners
     # Build instance types JSON
     set -l instance_types_json (cat "$CONFIG_FILE" | jq -c "$instances_path")
 
-    # Get the number of runs per instance type - this determines how many task runner slots we need
-    set -l min_runners (get_runs_per_instance_type "aws")
-
-    # Optional cap for task runners per instance
-    set -l runner_cap (get_task_runner_cap "aws")
+    # Number of instances to create per instance type
+    set -l instances_per_type (get_per_instance_type_instances "aws")
 
     # Build vcpu_count map and instance_count map
     set -l vcpu_map "{"
@@ -94,17 +91,11 @@ function prepare_aws_task_runners
         set -l vcpu (get_vcpu_count $instance_type)
         set -l effective_vcpu $vcpu
 
-        if test -n "$runner_cap"; and test "$runner_cap" != "null"
-            if test $runner_cap -lt $effective_vcpu
-                set effective_vcpu $runner_cap
-            end
-        end
-
         if test $effective_vcpu -lt 1
             set effective_vcpu 1
         end
 
-        set -l instances_needed (math "ceil($min_runners / $effective_vcpu)")
+        set -l instances_needed $instances_per_type
 
         if test "$first" = true
             set first false

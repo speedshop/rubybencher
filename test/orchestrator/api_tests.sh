@@ -19,7 +19,7 @@ test_pass
 
 # Create run
 test_step "Create run (POST /runs)"
-response=$(api_post "/runs" '{"ruby_version":"3.4.7","runs_per_instance_type":1,"local":["test-instance"]}')
+response=$(api_post "/runs" '{"ruby_version":"3.4.7","per_instance_type":{"tasks":1,"instances":1},"local":["test-instance"]}')
 RUN_ID=$(echo "$response" | jq -r '.run_id')
 assert_not_empty "$RUN_ID" "Run ID present"
 assert_equals "1" "$(echo "$response" | jq -r '.tasks_created')" "One task created"
@@ -71,14 +71,14 @@ test_step "Invalid API key returns 401"
 tmpfile=$(mktemp)
 code=$(curl -s -o "$tmpfile" -w "%{http_code}" -X POST \
     -H "Authorization: Bearer invalid" -H "Content-Type: application/json" \
-    -d '{"ruby_version":"3.4.7","runs_per_instance_type":1,"local":["test"]}' "$BASE_URL/runs")
+    -d '{"ruby_version":"3.4.7","per_instance_type":{"tasks":1,"instances":1},"local":["test"]}' "$BASE_URL/runs")
 assert_equals "401" "$code" "Returns 401"
 rm -f "$tmpfile"
 test_pass
 
 # Wrong runner_id
 test_step "Wrong runner_id returns 403"
-response=$(api_post "/runs" '{"ruby_version":"3.4.7","runs_per_instance_type":1,"local":["test-instance"]}')
+response=$(api_post "/runs" '{"ruby_version":"3.4.7","per_instance_type":{"tasks":1,"instances":1},"local":["test-instance"]}')
 new_run_id=$(echo "$response" | jq -r '.run_id')
 response=$(api_post "/runs/$new_run_id/tasks/claim" "{\"provider\":\"local\",\"instance_type\":\"test-instance\",\"runner_id\":\"$RUNNER_ID\"}")
 new_task_id=$(echo "$response" | jq -r '.task.id')

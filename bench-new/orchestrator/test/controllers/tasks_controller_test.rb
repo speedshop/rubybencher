@@ -3,7 +3,7 @@ require "test_helper"
 class TasksControllerTest < ActionDispatch::IntegrationTest
   setup do
     @api_key = ENV.fetch('API_KEY', 'dev_api_key_change_in_production')
-    @run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 2)
+    @run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 2)
     @task = @run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
   end
 

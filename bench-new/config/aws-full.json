@@ -1,8 +1,8 @@
 {
   "ruby_version": "3.4.8",
-  "runs_per_instance_type": 3,
-  "task_runners": {
-    "count": 4
+  "per_instance_type": {
+    "tasks": 3,
+    "instances": 2
   },
   "aws": [
     {

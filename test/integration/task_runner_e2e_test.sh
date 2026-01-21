@@ -21,7 +21,7 @@ test_pass
 
 # Create a run with a local instance
 test_step "Create run with local instance"
-response=$(api_post "/runs" '{"ruby_version":"3.4.7","runs_per_instance_type":1,"local":["task-runner-test"]}')
+response=$(api_post "/runs" '{"ruby_version":"3.4.7","per_instance_type":{"tasks":1,"instances":1},"local":["task-runner-test"]}')
 RUN_ID=$(echo "$response" | jq -r '.run_id')
 # The run_id returned is the external_id used for task claiming
 EXTERNAL_ID="$RUN_ID"

@@ -15,7 +15,7 @@ class GzipBuilderJobTest < ActiveJob::TestCase
   end
 
   test "collects results and marks run as completed" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1, status: "running")
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 1, status: "running")
     task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     task.claim!("runner-1")
     task.complete!("results/#{run.external_id}/task_1.tar.gz")
@@ -30,7 +30,7 @@ class GzipBuilderJobTest < ActiveJob::TestCase
   end
 
   test "marks cancelled run as cancelled after collecting results" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1, status: "cancelled")
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 1, status: "cancelled")
     task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     task.claim!("runner-1")
     task.complete!("results/#{run.external_id}/task_1.tar.gz")
@@ -45,7 +45,7 @@ class GzipBuilderJobTest < ActiveJob::TestCase
   end
 
   test "skips already completed runs" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1, status: "completed", gzip_url: "http://existing.com/results.tar.gz")
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 1, status: "completed", gzip_url: "http://existing.com/results.tar.gz")
 
     collect_called = false
     original_method = StorageService.method(:collect_all_results)
@@ -67,7 +67,7 @@ class GzipBuilderJobTest < ActiveJob::TestCase
   end
 
   test "marks run as completed even when storage collection fails" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1, status: "running")
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 1, status: "running")
     task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     task.claim!("runner-1")
     task.complete!("results/#{run.external_id}/task_1.tar.gz")
@@ -82,7 +82,7 @@ class GzipBuilderJobTest < ActiveJob::TestCase
   end
 
   test "marks cancelled run as cancelled even when storage collection fails" do
-    run = Run.create!(ruby_version: "3.4.7", runs_per_instance_type: 1, status: "cancelled")
+    run = Run.create!(ruby_version: "3.4.7", tasks_per_instance_type: 1, status: "cancelled")
     task = run.tasks.create!(provider: "aws", instance_type: "c8g.medium", run_number: 1)
     task.claim!("runner-1")
     task.complete!("results/#{run.external_id}/task_1.tar.gz")

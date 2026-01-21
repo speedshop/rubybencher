@@ -1,6 +1,9 @@
 {
   "ruby_version": "3.4.7",
-  "runs_per_instance_type": 2,
+  "per_instance_type": {
+    "tasks": 2,
+    "instances": 1
+  },
   "azure": [
     {
       "instance_type": "Standard_D2pls_v6",
