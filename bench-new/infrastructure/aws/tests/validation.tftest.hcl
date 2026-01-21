@@ -10,8 +10,9 @@ override_data {
   target = data.terraform_remote_state.meta
   values = {
     outputs = {
-      orchestrator_url = "https://orchestrator.example.com"
-      api_key          = "test-api-key"
+      orchestrator_url   = "https://orchestrator.example.com"
+      api_key            = "test-api-key"
+      ecr_repository_url = "123456789012.dkr.ecr.us-east-1.amazonaws.com/rubybencher-task-runner"
     }
   }
 }
