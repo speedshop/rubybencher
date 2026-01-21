@@ -20,10 +20,11 @@ run "validation" {
   command = plan
 
   variables {
-    aws_region   = "us-east-1"
-    key_name     = "test-key"
-    run_id       = "test-run"
-    ruby_version = "3.4.0"
+    aws_region        = "us-east-1"
+    key_name          = "test-key"
+    run_id            = "test-run"
+    ruby_version      = "3.4.0"
+    task_runner_image = "example.com/task-runner:test"
 
     instance_types = [
       {
