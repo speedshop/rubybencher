@@ -56,6 +56,10 @@ The master script:
 5. Starts all `post_run` providers.
 6. Waits for provider setup to complete, then monitors the run.
 
+## Common Provider Utilities
+
+Shared utilities for cloud providers are in [`common.fish`](master/lib/providers/common.fish). New providers should use these rather than reimplementing patterns. See AWS and Azure providers for usage examples.
+
 ## Provider Implementation Checklist
 
 ### 1) Add provider entry
@@ -65,7 +69,7 @@ The master script:
 - Implement `setup_<provider>_task_runners` in:
   - `bench-new/master/lib/providers/<provider>.fish`
 - Source the provider in:
-  - `bench-new/master/run.fish`
+  - `bench-new/master/run.fish` (after `common.fish`)
 
 ### 2) Config schema
 
@@ -159,11 +163,9 @@ Update the nuke scripts to destroy provider resources:
 
 Reference implementations:
 
-- AWS: `bench-new/master/lib/providers/aws.fish`
-  `bench-new/infrastructure/aws`
-- Azure: `bench-new/master/lib/providers/azure.fish`
-  `bench-new/infrastructure/azure`
-- Local: `bench-new/master/lib/providers/local.fish`
+- AWS: [`aws.fish`](master/lib/providers/aws.fish), [`infrastructure/aws`](../infrastructure/aws)
+- Azure: [`azure.fish`](master/lib/providers/azure.fish), [`infrastructure/azure`](../infrastructure/azure)
+- Local: [`local.fish`](master/lib/providers/local.fish)
 
 ## Common Pitfalls
 
@@ -212,33 +214,3 @@ The current helper script assumes `ec2-user`. If your provider uses a different 
 - add a provider-specific SSH helper script, or
 - update the generic helper to accept a username argument.
 
-## Quick Provider Skeleton
-
-```fish
-# bench-new/master/lib/providers/<provider>.fish
-function setup_<provider>_task_runners
-    set -l instances (cat "$CONFIG_FILE" | jq -r '.<provider> // empty')
-    if test -z "$instances"; or test "$instances" = "null"
-        return 0
-    end
-
-    if test "$LOCAL_ORCHESTRATOR" = true
-        log_error "<provider> task runners cannot be used with --local-orchestrator"
-        exit 1
-    end
-
-    # validate credentials...
-    # compute vcpu + instance_count...
-    # terraform init/apply...
-end
-```
-
-<!-- TODO: Update this guide to document common.fish utilities:
-     - provider_validate_not_local_orchestrator
-     - provider_build_vcpu_map / provider_build_instance_count_map
-     - provider_tf_init_if_needed
-     - provider_task_runners_exist / provider_run_id_matches
-     - provider_show_instances / provider_show_created_instances
-     - provider_update_status
-     - provider_terraform_apply
--->
