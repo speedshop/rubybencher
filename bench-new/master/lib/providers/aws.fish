@@ -85,17 +85,25 @@ function prepare_aws_task_runners
         exit 1
     end
 
+    # Get task runner image from ECR
+    set -l task_runner_image "$TASK_RUNNER_IMAGE"
+    if test -z "$task_runner_image"
+        log_error "TASK_RUNNER_IMAGE not set - ECR build may have failed"
+        exit 1
+    end
+
     # Create tfvars file for this run
-    echo "aws_region       = \"$aws_region\"
-key_name         = \"$key_name\"
-run_id           = \"$RUN_ID\"
-ruby_version     = \"$ruby_version\"
-instance_types   = $instance_types_json
-vcpu_count       = $vcpu_map
-instance_count   = $instance_count_map
-mock_benchmark   = $mock_flag
-debug_mode       = $debug_flag
-allowed_ssh_cidr = \"$allowed_ssh_cidr\"" > "$AWS_TF_DIR/terraform.tfvars"
+    echo "aws_region        = \"$aws_region\"
+key_name          = \"$key_name\"
+run_id            = \"$RUN_ID\"
+ruby_version      = \"$ruby_version\"
+task_runner_image = \"$task_runner_image\"
+instance_types    = $instance_types_json
+vcpu_count        = $vcpu_map
+instance_count    = $instance_count_map
+mock_benchmark    = $mock_flag
+debug_mode        = $debug_flag
+allowed_ssh_cidr  = \"$allowed_ssh_cidr\"" > "$AWS_TF_DIR/terraform.tfvars"
 
     if test "$DEBUG" = true
         echo "AWS terraform.tfvars:"

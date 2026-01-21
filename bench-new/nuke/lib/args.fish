@@ -6,6 +6,8 @@ function parse_args
                 set -g FORCE true
             case --providers-only
                 set -g PROVIDERS_ONLY true
+            case --thermonuclear
+                set -g THERMONUCLEAR true
             case --run-id
                 set i (math $i + 1)
                 if test $i -le (count $argv)
@@ -29,5 +31,16 @@ function parse_args
     if test "$PROVIDERS_ONLY" = true; and test -n "$TARGET_RUN_ID"
         log_error "--providers-only and --run-id cannot be used together"
         exit 1
+    end
+
+    # Validate: thermonuclear is mutually exclusive with providers-only and run-id
+    if test "$THERMONUCLEAR" = true
+        if test "$PROVIDERS_ONLY" = true
+            log_error "--thermonuclear and --providers-only cannot be used together"
+            exit 1
+        else if test -n "$TARGET_RUN_ID"
+            log_error "--thermonuclear and --run-id cannot be used together"
+            exit 1
+        end
     end
 end

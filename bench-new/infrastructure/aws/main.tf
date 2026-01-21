@@ -31,8 +31,65 @@ data "terraform_remote_state" "meta" {
 
 locals {
   # Only need orchestrator connection info from meta
-  orchestrator_url = data.terraform_remote_state.meta.outputs.orchestrator_url
-  api_key          = data.terraform_remote_state.meta.outputs.api_key
+  orchestrator_url   = data.terraform_remote_state.meta.outputs.orchestrator_url
+  api_key            = data.terraform_remote_state.meta.outputs.api_key
+  ecr_repository_url = data.terraform_remote_state.meta.outputs.ecr_repository_url
+}
+
+# IAM role for task runner EC2 instances to pull from ECR
+resource "aws_iam_role" "task_runner" {
+  name = "railsbencher-task-runner-role-${var.run_id}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "railsbencher-task-runner-role-${var.run_id}"
+  }
+}
+
+# IAM policy for ECR pull access
+resource "aws_iam_role_policy" "task_runner_ecr" {
+  name = "ecr-pull-policy"
+  role = aws_iam_role.task_runner.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Instance profile for task runner EC2 instances
+resource "aws_iam_instance_profile" "task_runner" {
+  name = "railsbencher-task-runner-profile-${var.run_id}"
+  role = aws_iam_role.task_runner.name
 }
 
 # Dedicated VPC for this benchmark run (quarantine per NUKE_SPEC.md)
@@ -177,10 +234,11 @@ locals {
 resource "aws_instance" "task_runner" {
   for_each = local.instance_map
 
-  ami           = local.instance_arch[each.value.alias] == "arm64" ? data.aws_ami.amazon_linux_arm64.id : data.aws_ami.amazon_linux_x86_64.id
-  instance_type = each.value.instance_type
-  key_name      = var.key_name
-  subnet_id     = aws_subnet.run.id
+  ami                  = local.instance_arch[each.value.alias] == "arm64" ? data.aws_ami.amazon_linux_arm64.id : data.aws_ami.amazon_linux_x86_64.id
+  instance_type        = each.value.instance_type
+  key_name             = var.key_name
+  subnet_id            = aws_subnet.run.id
+  iam_instance_profile = aws_iam_instance_profile.task_runner.name
 
   vpc_security_group_ids = [aws_security_group.task_runner.id]
 
@@ -190,15 +248,17 @@ resource "aws_instance" "task_runner" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user-data.sh", {
-    orchestrator_url = local.orchestrator_url
-    api_key          = local.api_key
-    run_id           = var.run_id
-    provider_name    = "aws"
-    instance_type    = each.value.instance_type
-    ruby_version     = var.ruby_version
-    mock_benchmark   = var.mock_benchmark
-    debug_mode       = var.debug_mode
-    vcpu_count       = var.vcpu_count[each.value.alias]
+    orchestrator_url  = local.orchestrator_url
+    api_key           = local.api_key
+    run_id            = var.run_id
+    provider_name     = "aws"
+    instance_type     = each.value.instance_type
+    ruby_version      = var.ruby_version
+    task_runner_image = var.task_runner_image
+    aws_region        = var.aws_region
+    mock_benchmark    = var.mock_benchmark
+    debug_mode        = var.debug_mode
+    vcpu_count        = var.vcpu_count[each.value.alias]
   }))
 
   tags = {

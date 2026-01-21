@@ -24,6 +24,43 @@ resource "random_id" "suffix" {
   byte_length = 4
 }
 
+# ECR repository for task runner images
+resource "aws_ecr_repository" "task_runner" {
+  name                 = "rubybencher-task-runner"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = false
+  }
+
+  tags = {
+    Name = "rubybencher-task-runner"
+  }
+}
+
+# Lifecycle policy to keep last 10 images
+resource "aws_ecr_lifecycle_policy" "task_runner" {
+  repository = aws_ecr_repository.task_runner.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 10 images"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = 10
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
 # S3 bucket for benchmark results
 resource "aws_s3_bucket" "results" {
   bucket        = "${var.s3_bucket_prefix}-${random_id.suffix.hex}"

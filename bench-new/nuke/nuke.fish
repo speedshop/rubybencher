@@ -11,6 +11,7 @@ set -g LIB_DIR "$SCRIPT_DIR/lib"
 set -g FORCE true
 set -g TARGET_RUN_ID ""
 set -g PROVIDERS_ONLY false
+set -g THERMONUCLEAR false
 
 source "$LIB_DIR/logging.fish"
 source "$LIB_DIR/usage.fish"
@@ -22,19 +23,46 @@ source "$LIB_DIR/docker.fish"
 source "$LIB_DIR/files.fish"
 
 function confirm_destruction
+    set -l skip_confirm false
     if test "$FORCE" = true
-        return 0
+        set skip_confirm true
     end
 
     set -l scope "ALL rb_managed resources"
-    if test "$PROVIDERS_ONLY" = true
+    if test "$THERMONUCLEAR" = true
+        set scope "local state only (thermonuclear mode)"
+    else if test "$PROVIDERS_ONLY" = true
         set scope "Provider infrastructure only (AWS/Azure)"
     else if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
         set scope "run ID: $TARGET_RUN_ID"
     end
 
     echo ""
-    if test "$PROVIDERS_ONLY" = true
+    if test "$THERMONUCLEAR" = true
+        gum style \
+            --border double \
+            --border-foreground 196 \
+            --align center \
+            --width 60 \
+            --padding "1" \
+            --foreground 196 \
+            "⚠️  THERMONUCLEAR MODE ⚠️" \
+            "" \
+            "This will SKIP Terraform destroy and ONLY:" \
+            "" \
+            "• Delete local Terraform state files" \
+            "• Cleanup tagged cloud stragglers" \
+            "• Delete local Docker containers and files" \
+            "" \
+            "⚠️  CLOUD RESOURCES MAY REMAIN RUNNING  ⚠️" \
+            "" \
+            "You are responsible for manual cleanup of:" \
+            "• EC2 instances, S3 buckets, VPCs" \
+            "• Azure VMs, VNets, storage accounts" \
+            "" \
+            "Use this only when Terraform state is corrupt" \
+            "or when cloud resources are already deleted."
+    else if test "$PROVIDERS_ONLY" = true
         gum style \
             --border double \
             --border-foreground 196 \
@@ -91,14 +119,33 @@ function confirm_destruction
             "This action cannot be undone!"
     end
 
+    if test "$skip_confirm" = true
+        return 0
+    end
+
     echo ""
-    if not gum confirm --default=false "Are you sure you want to destroy infrastructure?"
-        log_info "Aborted"
-        exit 0
+    if test "$THERMONUCLEAR" = true
+        if not gum confirm --default=false "Proceed with thermonuclear cleanup?"
+            log_info "Aborted"
+            exit 0
+        end
+
+        echo ""
+        set -l confirm_text (gum input --placeholder "Type 'NUKE' to confirm thermonuclear mode")
+
+        if test "$confirm_text" != "NUKE"
+            log_info "Confirmation failed - aborted"
+            exit 0
+        end
+    else
+        if not gum confirm --default=false "Are you sure you want to destroy infrastructure?"
+            log_info "Aborted"
+            exit 0
+        end
     end
 
     # Double confirmation only for full cleanup (not targeted or providers-only)
-    if test -z "$TARGET_RUN_ID"; and test "$PROVIDERS_ONLY" != true
+    if test -z "$TARGET_RUN_ID"; and test "$PROVIDERS_ONLY" != true; and test "$THERMONUCLEAR" != true
         echo ""
         set -l confirm_text (gum input --placeholder "Type 'destroy' to confirm FULL cleanup")
 
@@ -125,7 +172,9 @@ function main
         "NUKE Script"
 
     # Show mode
-    if test "$PROVIDERS_ONLY" = true
+    if test "$THERMONUCLEAR" = true
+        log_info "Mode: Thermonuclear (skip Terraform destroy, delete local state only)"
+    else if test "$PROVIDERS_ONLY" = true
         log_info "Mode: Providers-only (AWS/Azure task runners)"
     else if set -q TARGET_RUN_ID; and test -n "$TARGET_RUN_ID"
         log_info "Mode: Targeted cleanup (run_id: $TARGET_RUN_ID)"
@@ -144,7 +193,11 @@ function main
     set -l errors 0
 
     # Terraform-managed resources
-    if test "$PROVIDERS_ONLY" = true
+    if test "$THERMONUCLEAR" = true
+        # Thermonuclear mode: skip terraform destroy, delete local state only
+        delete_terraform_state
+        or set errors (math $errors + 1)
+    else if test "$PROVIDERS_ONLY" = true
         # Providers-only mode: destroy only AWS/Azure terraform
         destroy_terraform_providers_only
         or set errors (math $errors + 1)
@@ -168,8 +221,8 @@ function main
         or set errors (math $errors + 1)
     end
 
-    # Local cleanup only in full mode
-    if test -z "$TARGET_RUN_ID"; and test "$PROVIDERS_ONLY" != true
+    # Local cleanup only in full mode or thermonuclear mode
+    if test "$THERMONUCLEAR" = true; or test -z "$TARGET_RUN_ID"; and test "$PROVIDERS_ONLY" != true
         cleanup_local_containers
         or set errors (math $errors + 1)
 
