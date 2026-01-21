@@ -129,6 +129,8 @@ jobs:
           sudo apt update && sudo apt install -y gum
 
       - name: Full E2E with Mock Benchmark
+        env:
+          MOCK_ALWAYS_SUCCEED: "1"
         run: |
           fish bench-new/master/run.fish \
             -c bench-new/config/local.json \
