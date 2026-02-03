@@ -1,0 +1,13 @@
+{
+  "ruby_version": "4.0.1",
+  "per_instance_type": {
+    "tasks": 2,
+    "instances": 2
+  },
+  "fargate": [
+    {
+      "instance_type": "fargate-1vcpu-2gb",
+      "alias": "fargate"
+    }
+  ]
+}

@@ -59,5 +59,11 @@
       "alias": "fals-v6",
       "arch": "amd64"
     }
+  ],
+  "fargate": [
+    {
+      "instance_type": "fargate-1vcpu-2gb",
+      "alias": "fargate"
+    }
   ]
 }
