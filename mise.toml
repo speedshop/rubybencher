@@ -1,6 +1,6 @@
 [tools]
 terraform = "1.9"
-ruby = "3.4"
+ruby = "4.0"
 node = "22"
 "npm:wrangler" = "latest"
 fnox = "latest"
