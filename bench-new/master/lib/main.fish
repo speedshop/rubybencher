@@ -111,9 +111,9 @@ function main
     # Get orchestrator configuration
     get_orchestrator_config
 
-    # Build and push task runner image to ECR (AWS only)
+    # Build and push task runner image to ECR (AWS/Fargate only)
     if test "$LOCAL_ORCHESTRATOR" != true; and test "$SKIP_INFRA" != true
-        if contains aws $pre_providers
+        if contains aws $pre_providers; or contains fargate $pre_providers
             if not build_and_push_task_runner_image
                 log_error "Failed to build task runner image"
                 exit 1
@@ -158,6 +158,34 @@ function main
 
                         if test -n "$tf_log_file"
                             log_info "AWS terraform log: $tf_log_file"
+                        end
+                    end
+
+                case fargate
+                    if fargate_task_runners_exist
+                        if fargate_run_id_matches "$RUN_ID"
+                            log_info "Fargate task runners already exist for run $RUN_ID; skipping apply"
+                            show_existing_fargate_task_runners
+                            update_fargate_status existing
+                            continue
+                        else
+                            log_info "Fargate task runners exist but run ID differs; recreating"
+                        end
+                    end
+
+                    if prepare_fargate_task_runners
+                        set -l tf_dir (get_fargate_terraform_dir)
+                        set -l tf_cmd terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
+                        set -l tf_log_file "$FARGATE_TF_LOG_FILE"
+
+                        set -l job_pid (run_logged_command_bg "$tf_log_file" $tf_cmd)
+                        set -a provider_job_pids $job_pid
+                        set -a provider_job_names fargate
+                        set -a provider_job_logs $tf_log_file
+                        log_info "Fargate terraform running in background (pid $job_pid)"
+
+                        if test -n "$tf_log_file"
+                            log_info "Fargate terraform log: $tf_log_file"
                         end
                     end
 
@@ -231,6 +259,9 @@ function main
                 case aws
                     finalize_aws_task_runners
                     update_aws_status applied
+                case fargate
+                    finalize_fargate_task_runners
+                    update_fargate_status applied
                 case azure
                     finalize_azure_task_runners
                     update_azure_status applied

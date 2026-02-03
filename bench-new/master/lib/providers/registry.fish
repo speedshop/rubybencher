@@ -4,6 +4,7 @@
 function provider_list
     echo aws
     echo azure
+    echo fargate
     echo local
 end
 
@@ -38,7 +39,7 @@ function provider_phase
     switch $provider
         case local
             echo post_run
-        case aws azure
+        case aws azure fargate
             echo pre_orchestrator
         case '*'
             echo pre_orchestrator
@@ -51,7 +52,7 @@ function provider_validate
     set -l provider $argv[1]
 
     switch $provider
-        case aws azure local
+        case aws azure fargate local
             return 0
         case '*'
             log_error "Unknown provider: $provider"
@@ -67,6 +68,8 @@ function provider_setup_task_runners
             setup_aws_task_runners
         case azure
             setup_azure_task_runners
+        case fargate
+            setup_fargate_task_runners
         case local
             start_local_task_runners
         case '*'
@@ -84,6 +87,8 @@ function provider_get_terraform_dir
             echo "$BENCH_DIR/infrastructure/aws"
         case azure
             echo "$BENCH_DIR/infrastructure/azure"
+        case fargate
+            echo "$BENCH_DIR/infrastructure/fargate"
         case '*'
             echo ""
     end
@@ -98,6 +103,8 @@ function provider_has_existing_runners
             aws_task_runners_exist
         case azure
             azure_task_runners_exist
+        case fargate
+            fargate_task_runners_exist
         case '*'
             return 1
     end
@@ -113,6 +120,8 @@ function provider_matches_run_id
             aws_run_id_matches "$run_id"
         case azure
             azure_run_id_matches "$run_id"
+        case fargate
+            fargate_run_id_matches "$run_id"
         case '*'
             return 1
     end
@@ -127,6 +136,8 @@ function provider_show_existing_runners
             show_existing_aws_task_runners
         case azure
             show_existing_azure_task_runners
+        case fargate
+            show_existing_fargate_task_runners
     end
 end
 
@@ -139,5 +150,7 @@ function provider_status_update
             update_aws_status
         case azure
             update_azure_status
+        case fargate
+            update_fargate_status
     end
 end
