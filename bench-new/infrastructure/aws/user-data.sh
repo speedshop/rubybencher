@@ -12,8 +12,6 @@ RUN_ID="${run_id}"
 PROVIDER="${provider_name}"
 INSTANCE_TYPE="${instance_type}"
 RUBY_VERSION="${ruby_version}"
-TASK_RUNNER_IMAGE="${task_runner_image}"
-AWS_REGION="${aws_region}"
 MOCK_BENCHMARK="${mock_benchmark}"
 DEBUG_MODE="${debug_mode}"
 VCPU_COUNT="${vcpu_count}"
@@ -24,8 +22,6 @@ echo "  Run ID: $RUN_ID"
 echo "  Provider: $PROVIDER"
 echo "  Instance Type: $INSTANCE_TYPE"
 echo "  Ruby Version: $RUBY_VERSION"
-echo "  Task Runner Image: $TASK_RUNNER_IMAGE"
-echo "  AWS Region: $AWS_REGION"
 echo "  Mock Benchmark: $MOCK_BENCHMARK"
 echo "  Debug Mode: $DEBUG_MODE"
 echo "  vCPU Count: $VCPU_COUNT"
@@ -34,9 +30,9 @@ echo "  vCPU Count: $VCPU_COUNT"
 echo "Updating system packages..."
 dnf update -y
 
-# Install Docker
-echo "Installing Docker..."
-dnf install -y docker
+# Install Docker + git
+echo "Installing Docker and git..."
+dnf install -y docker git
 systemctl enable docker
 systemctl start docker
 
@@ -51,30 +47,22 @@ for i in {1..30}; do
     sleep 2
 done
 
-# Login to ECR using instance role (no credentials needed)
-echo "Logging in to ECR..."
-# Extract registry URL from image (everything before the first /)
-ECR_REGISTRY=$(echo "$TASK_RUNNER_IMAGE" | cut -d'/' -f1)
+# Clone the repository to get task-runner code
+echo "Cloning repository for task-runner code..."
+cd /opt
+git clone --depth 1 https://github.com/speedshop/rubybencher.git repo
+cd repo/bench-new/task-runner
 
-aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+# Build the task runner Docker image
+echo "Building task runner Docker image for Ruby $RUBY_VERSION..."
+docker build -t task-runner:$RUBY_VERSION --build-arg RUBY_VERSION=$RUBY_VERSION .
 
 if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to login to ECR"
+    echo "ERROR: Failed to build task runner image"
     exit 1
 fi
 
-echo "ECR login successful"
-
-# Pull the prebuilt task runner image
-echo "Pulling task runner image from ECR: $TASK_RUNNER_IMAGE"
-docker pull "$TASK_RUNNER_IMAGE"
-
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to pull task runner image"
-    exit 1
-fi
-
-echo "Task runner image pulled successfully"
+echo "Task runner image built successfully"
 
 # Determine container arguments
 CONTAINER_ARGS="--orchestrator-url $ORCHESTRATOR_URL --api-key $API_KEY --run-id $RUN_ID --provider $PROVIDER --instance-type $INSTANCE_TYPE"
@@ -103,7 +91,7 @@ for i in $(seq 1 $VCPU_COUNT); do
         --cpuset-cpus="$CPU_INDEX" \
         --restart=no \
         $CONTAINER_ENV_ARGS \
-        "$TASK_RUNNER_IMAGE" \
+        task-runner:$RUBY_VERSION \
         $CONTAINER_ARGS
 
     if [ $? -eq 0 ]; then
