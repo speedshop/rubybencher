@@ -20,7 +20,7 @@ class RunsController < ApplicationController
     @run = Run.new(
       ruby_version: params[:ruby_version],
       tasks_per_instance_type: tasks_per_instance_type(params),
-      external_id: params[:run_id]
+      external_id: params[:run_id].presence
     )
 
     if @run.save
@@ -78,7 +78,7 @@ class RunsController < ApplicationController
   def parse_instance_types(params)
     instance_types = []
 
-    %w[aws azure local].each do |provider|
+    %w[aws azure fargate local].each do |provider|
       if params[provider].present?
         params[provider].each do |item|
           # Support both new format (object with instance_type/alias) and legacy (string)

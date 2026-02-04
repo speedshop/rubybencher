@@ -66,6 +66,12 @@ function main
         log_info "Using run ID: $RUN_ID"
     end
 
+    # Create initial status file early so --resume-run latest works even if we fail before run creation
+    # Status file is created early; after run creation, polling will keep updating it.
+    if test "$RESUME_RUN" != true
+        run_status_set "$RUN_ID"
+    end
+
     if set -q LOG_RUN_DIR; and test -n "$LOG_RUN_DIR"
         log_info "Run logs: $LOG_RUN_DIR"
     end
