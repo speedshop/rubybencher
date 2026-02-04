@@ -132,6 +132,7 @@ function main
     set -l provider_job_pids
     set -l provider_job_names
     set -l provider_job_logs
+    set -l provider_job_status_files
     if test "$SKIP_INFRA" = true
         if test (count $pre_providers) -gt 0
             log_warning "Skipping cloud task runner provisioning due to --skip-infra"
@@ -156,10 +157,13 @@ function main
                         set -l tf_cmd terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
                         set -l tf_log_file "$AWS_TF_LOG_FILE"
 
-                        set -l job_pid (run_logged_command_bg "$tf_log_file" $tf_cmd)
+                        run_logged_command_bg "$tf_log_file" $tf_cmd
+                        set -l job_pid $__run_logged_command_bg_pid
+                        set -l job_status_file $__run_logged_command_bg_status_file
                         set -a provider_job_pids $job_pid
                         set -a provider_job_names aws
                         set -a provider_job_logs $tf_log_file
+                        set -a provider_job_status_files $job_status_file
                         log_info "AWS terraform running in background (pid $job_pid)"
 
                         if test -n "$tf_log_file"
@@ -184,10 +188,13 @@ function main
                         set -l tf_cmd terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
                         set -l tf_log_file "$FARGATE_TF_LOG_FILE"
 
-                        set -l job_pid (run_logged_command_bg "$tf_log_file" $tf_cmd)
+                        run_logged_command_bg "$tf_log_file" $tf_cmd
+                        set -l job_pid $__run_logged_command_bg_pid
+                        set -l job_status_file $__run_logged_command_bg_status_file
                         set -a provider_job_pids $job_pid
                         set -a provider_job_names fargate
                         set -a provider_job_logs $tf_log_file
+                        set -a provider_job_status_files $job_status_file
                         log_info "Fargate terraform running in background (pid $job_pid)"
 
                         if test -n "$tf_log_file"
@@ -212,10 +219,13 @@ function main
                         set -l tf_cmd terraform -chdir="$tf_dir" apply -auto-approve -parallelism=30
                         set -l tf_log_file "$AZURE_TF_LOG_FILE"
 
-                        set -l job_pid (run_logged_command_bg "$tf_log_file" $tf_cmd)
+                        run_logged_command_bg "$tf_log_file" $tf_cmd
+                        set -l job_pid $__run_logged_command_bg_pid
+                        set -l job_status_file $__run_logged_command_bg_status_file
                         set -a provider_job_pids $job_pid
                         set -a provider_job_names azure
                         set -a provider_job_logs $tf_log_file
+                        set -a provider_job_status_files $job_status_file
                         log_info "Azure terraform running in background (pid $job_pid)"
 
                         if test -n "$tf_log_file"
@@ -251,9 +261,19 @@ function main
             set -l job_pid $provider_job_pids[$idx]
             set -l provider $provider_job_names[$idx]
             set -l log_file $provider_job_logs[$idx]
+            set -l status_file $provider_job_status_files[$idx]
             log_info "Waiting for $provider terraform to complete..."
             wait $job_pid
-            set -l tf_status $status
+            set -l wait_status $status
+            if test $wait_status -ne 0
+                log_error "Failed waiting for $provider terraform process"
+                exit 1
+            end
+
+            set -l tf_status (string trim -- (cat "$status_file" 2>/dev/null))
+            if test -z "$tf_status"
+                set tf_status 1
+            end
             if test $tf_status -ne 0
                 log_error "$provider terraform failed"
                 if test -n "$log_file"

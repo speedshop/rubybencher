@@ -9,7 +9,10 @@ end
 
 function generate_run_id
     # Generate a run ID matching the server format: timestamp + 8 random digits
-    set -l timestamp (date +%s)
+        set script (string join '' \
+            $cmd_string \
+            ' >/dev/null 2>&1; echo $status > ' \
+            $status_file_escaped)
     set -l random_digits (printf "%08d" (math (random) % 100000000))
     echo "$timestamp$random_digits"
 end
@@ -17,7 +20,10 @@ end
 function run_with_spinner
     set -l cmd $argv[2..-1]
     $cmd
-    return $status
+        set script (string join '' \
+            'begin; ' $cmd_string '; end 2>&1 | tee -a ' $targets_string ' >/dev/null; ' \
+            'set -l statuses (string split --no-empty " " (string replace -a "\n" " " -- $pipestatus)); ' \
+            'echo $statuses[1] > ' $status_file_escaped)
 end
 
 function log_path_for -a name
@@ -60,6 +66,10 @@ function log_targets_for -a log_file
         end
     end
 
+    if test (count $targets) -eq 0
+        return 0
+    end
+
     # Use printf to return each element on its own line
     # This ensures command substitution creates separate array elements
     printf '%s\n' $targets
@@ -75,7 +85,8 @@ function run_logged_command -a log_file
     end
 
     begin; $cmd; end 2>&1 | tee -a $tee_targets
-    set -l cmd_status $pipestatus[1]
+    set -l statuses (string split --no-empty " " (string replace -a "\n" " " -- $pipestatus))
+    set -l cmd_status $statuses[1]
     return $cmd_status
 end
 
@@ -83,19 +94,44 @@ function run_logged_command_bg -a log_file
     set -l cmd $argv[2..-1]
     set -l tee_targets (log_targets_for "$log_file")
 
-    # Run command in background subshell
-    # Use eval to preserve environment variables (AWS credentials from fnox exec)
-    # Fish's -c spawns a new shell and loses parent environment, so we use eval with &
-    if test (count $tee_targets) -eq 0
-        eval "$cmd" &
+    set -l status_file
+    if test -n "$log_file"
+        set status_file "$log_file.status"
     else
-        # Join targets to string and evaluate the whole pipeline
-        # This ensures the command runs in the current environment
-        set -l targets_str (string join ' ' (string escape -- $tee_targets))
-        set -l cmd_joined (string join ' ' -- $cmd)
-        eval "$cmd_joined 2>&1 | tee -a $targets_str" &
+        set status_file "/tmp/rubybencher-bg-status-$LOG_RUN_TAG.status"
     end
-    echo $last_pid
+
+    command rm -f "$status_file" 2>/dev/null
+
+    set -l escaped_cmd (string escape -- $cmd)
+    set -l cmd_string (string join " " -- $escaped_cmd)
+    set -l status_file_escaped (string escape -- $status_file)
+
+    set -l script
+
+    if test (count $tee_targets) -eq 0
+        set script (string join '' \
+            $cmd_string \
+            ' >/dev/null 2>&1; echo $status > ' \
+            $status_file_escaped)
+    else
+        set -l escaped_targets
+        for target in $tee_targets
+            set escaped_targets $escaped_targets (string escape -- $target)
+        end
+
+        set -l targets_string (string join " " -- $escaped_targets)
+        set script (string join '' \
+            'begin; ' $cmd_string '; end 2>&1 | tee -a ' $targets_string ' >/dev/null; ' \
+            'set -l statuses (string split --no-empty " " (string replace -a "\n" " " -- $pipestatus)); ' \
+            'echo $statuses[1] > ' $status_file_escaped)
+    end
+
+    fish -c "$script" &
+
+    set -g __run_logged_command_bg_pid $last_pid
+    set -g __run_logged_command_bg_status_file $status_file
+    return 0
 end
 
 function wrap_command_with_logging -a log_file
