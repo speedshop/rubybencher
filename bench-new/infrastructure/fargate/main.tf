@@ -98,6 +98,12 @@ resource "aws_ecs_task_definition" "task_runner" {
       name      = "task-runner"
       image     = var.task_runner_image
       essential = true
+      environment = var.mock_benchmark ? [
+        {
+          name  = "MOCK_ALWAYS_SUCCEED"
+          value = "1"
+        }
+      ] : []
       command = compact([
         "--orchestrator-url", local.orchestrator_url,
         "--api-key", local.api_key,
