@@ -17,6 +17,12 @@ function cleanup_local_files
         log_info "Removed Azure task runner terraform.tfvars"
     end
 
+    # Clean Fargate task runner tfvars (contains run-specific config)
+    if test -f "$BENCH_DIR/infrastructure/fargate/terraform.tfvars"
+        rm -f "$BENCH_DIR/infrastructure/fargate/terraform.tfvars"
+        log_info "Removed Fargate task runner terraform.tfvars"
+    end
+
     set -l status_dir "$BENCH_DIR/../status"
     if test -d "$status_dir"
         rm -rf "$status_dir"

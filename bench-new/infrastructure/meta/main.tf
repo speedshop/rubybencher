@@ -317,6 +317,7 @@ resource "aws_instance" "orchestrator" {
       bastion_host        = aws_instance.bastion.public_ip
       bastion_user        = "ec2-user"
       bastion_private_key = file(var.private_key_path)
+      timeout             = "15m"
     }
   }
 
@@ -337,6 +338,7 @@ resource "aws_instance" "orchestrator" {
       bastion_host        = aws_instance.bastion.public_ip
       bastion_user        = "ec2-user"
       bastion_private_key = file(var.private_key_path)
+      timeout             = "15m"
     }
   }
 
@@ -361,6 +363,7 @@ resource "aws_instance" "orchestrator" {
       bastion_host        = aws_instance.bastion.public_ip
       bastion_user        = "ec2-user"
       bastion_private_key = file(var.private_key_path)
+      timeout             = "15m"
     }
   }
 }

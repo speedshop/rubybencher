@@ -8,7 +8,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U orchestrator"]
+      test: ["CMD-SHELL", "pg_isready -U orchestrator -d orchestrator_production"]
       interval: 10s
       timeout: 5s
       retries: 5

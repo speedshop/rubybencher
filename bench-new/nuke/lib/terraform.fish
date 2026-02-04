@@ -50,6 +50,9 @@ function destroy_terraform
     # Destroy Azure task runner infrastructure
     destroy_terraform_dir "$BENCH_DIR/infrastructure/azure" "Azure task runners"
 
+    # Destroy Fargate task runner infrastructure
+    destroy_terraform_dir "$BENCH_DIR/infrastructure/fargate" "Fargate task runners"
+
     # Then destroy meta infrastructure
     destroy_terraform_dir "$BENCH_DIR/infrastructure/meta" "meta"
 end
@@ -97,6 +100,24 @@ function destroy_terraform_for_run
         log_info "No Azure terraform infrastructure found"
     end
 
+    # Check Fargate terraform state for matching run_id
+    set -l fargate_tf_dir "$BENCH_DIR/infrastructure/fargate"
+    if test -f "$fargate_tf_dir/terraform.tfstate"; or test -d "$fargate_tf_dir/.terraform"
+        if test -d "$fargate_tf_dir/.terraform"
+            set -l state_run_id (terraform -chdir="$fargate_tf_dir" output -raw run_id 2>/dev/null)
+            if test "$state_run_id" = "$target_run_id"
+                log_info "Fargate terraform state matches run $target_run_id - destroying..."
+                destroy_terraform_dir "$fargate_tf_dir" "Fargate task runners"
+            else if test -n "$state_run_id"
+                log_info "Fargate terraform state is for run $state_run_id, not $target_run_id - skipping"
+            else
+                log_info "No Fargate terraform state found"
+            end
+        end
+    else
+        log_info "No Fargate terraform infrastructure found"
+    end
+
     # NOTE: Meta infrastructure is NEVER destroyed in targeted mode
     log_info "Meta infrastructure preserved (shared across runs)"
 end
@@ -108,6 +129,9 @@ function destroy_terraform_providers_only
     # Destroy Azure task runner infrastructure
     destroy_terraform_dir "$BENCH_DIR/infrastructure/azure" "Azure task runners"
 
+    # Destroy Fargate task runner infrastructure
+    destroy_terraform_dir "$BENCH_DIR/infrastructure/fargate" "Fargate task runners"
+
     # NOTE: Meta infrastructure is NEVER destroyed in providers-only mode
     log_info "Meta infrastructure preserved (orchestrator/bastion/S3/VPC)"
 end
@@ -116,7 +140,7 @@ function delete_terraform_state
     # Delete local Terraform state files (thermonuclear mode)
     log_warning "Deleting local Terraform state files..."
 
-    set -l state_dirs "$BENCH_DIR/infrastructure/aws" "$BENCH_DIR/infrastructure/azure" "$BENCH_DIR/infrastructure/meta"
+    set -l state_dirs "$BENCH_DIR/infrastructure/aws" "$BENCH_DIR/infrastructure/azure" "$BENCH_DIR/infrastructure/fargate" "$BENCH_DIR/infrastructure/meta"
 
     for tf_dir in $state_dirs
         if test -d "$tf_dir"

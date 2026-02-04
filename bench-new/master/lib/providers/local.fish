@@ -66,8 +66,10 @@ function start_local_task_runners
             log_info "Starting task runner $runner_idx/$runner_count for local/$instance_alias ($instance_type)..."
 
             set -l mock_flag ""
+            set -l mock_env_flags
             if test "$MOCK_BENCHMARK" = true
                 set mock_flag "--mock"
+                set mock_env_flags -e MOCK_ALWAYS_SUCCEED=1
             end
 
             set -l debug_flags
@@ -79,6 +81,7 @@ function start_local_task_runners
                 --name "$container_name" \
                 --add-host=host.docker.internal:host-gateway \
                 --cpus=1 \
+                $mock_env_flags \
                 task-runner:$ruby_version \
                 --orchestrator-url "$container_orchestrator_url" \
                 --api-key "$API_KEY" \
