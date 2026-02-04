@@ -143,6 +143,8 @@ All providers should pass the same core args to the task runner:
 Add provider-specific credential checks in `setup_<provider>_task_runners`.
 Fail fast with a clear error if credentials are missing.
 
+Also, before considering a new provider implementation "done", manually exercise every third-party API call/flow it relies on (e.g. via the cloud CLI) to flush out missing IAM roles/permissions early. Infrastructure code often fails late; a quick manual CLI pass catches auth gaps fast.
+
 ### 7) Cleanup (nuke)
 
 Update the nuke scripts to destroy provider resources:

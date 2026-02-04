@@ -151,9 +151,22 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
+      - name: Terraform fmt (check)
+        run: |
+          terraform -chdir=bench-new/infrastructure/meta fmt -check
+          terraform -chdir=bench-new/infrastructure/aws fmt -check
+          terraform -chdir=bench-new/infrastructure/azure fmt -check
+          terraform -chdir=bench-new/infrastructure/fargate fmt -check
+
       - name: Validate Meta Infrastructure Configs
         run: |
           cd bench-new/infrastructure/meta
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate Fargate Infrastructure Configs
+        run: |
+          cd bench-new/infrastructure/fargate
           terraform init -backend=false
           terraform validate
 

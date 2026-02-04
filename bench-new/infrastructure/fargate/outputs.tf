@@ -9,7 +9,7 @@ output "task_runner_instances" {
       instance_type = local.instance_configs[alias].instance_type
     }
   }
-end
+}
 
 output "task_runner_instance_ids" {
   description = "List of all task runner service IDs"
