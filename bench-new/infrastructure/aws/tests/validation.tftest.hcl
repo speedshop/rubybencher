@@ -6,6 +6,10 @@ mock_provider "aws" {
   }
 }
 
+mock_provider "aws" {
+  alias = "untagged"
+}
+
 override_data {
   target = data.terraform_remote_state.meta
   values = {

@@ -20,6 +20,13 @@ provider "aws" {
   }
 }
 
+# Some AWS identities used for benchmarking don't have permission to tag IAM roles.
+# Use an untagged provider for IAM resources to avoid requiring iam:TagRole.
+provider "aws" {
+  alias  = "untagged"
+  region = var.aws_region
+}
+
 # Fetch meta infrastructure state via data sources
 data "terraform_remote_state" "meta" {
   backend = "local"
@@ -38,7 +45,8 @@ locals {
 
 # IAM role for task runner EC2 instances to pull from ECR
 resource "aws_iam_role" "task_runner" {
-  name = "railsbencher-task-runner-role-${var.run_id}"
+  provider = aws.untagged
+  name     = "railsbencher-task-runner-role-${var.run_id}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -53,15 +61,13 @@ resource "aws_iam_role" "task_runner" {
     ]
   })
 
-  tags = {
-    Name = "railsbencher-task-runner-role-${var.run_id}"
-  }
 }
 
 # IAM policy for ECR pull access
 resource "aws_iam_role_policy" "task_runner_ecr" {
-  name = "ecr-pull-policy"
-  role = aws_iam_role.task_runner.id
+  provider = aws.untagged
+  name     = "ecr-pull-policy"
+  role     = aws_iam_role.task_runner.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -88,8 +94,9 @@ resource "aws_iam_role_policy" "task_runner_ecr" {
 
 # Instance profile for task runner EC2 instances
 resource "aws_iam_instance_profile" "task_runner" {
-  name = "railsbencher-task-runner-profile-${var.run_id}"
-  role = aws_iam_role.task_runner.name
+  provider = aws.untagged
+  name     = "railsbencher-task-runner-profile-${var.run_id}"
+  role     = aws_iam_role.task_runner.name
 }
 
 # Dedicated VPC for this benchmark run (quarantine per NUKE_SPEC.md)

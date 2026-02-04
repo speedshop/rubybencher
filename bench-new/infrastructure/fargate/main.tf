@@ -20,6 +20,13 @@ provider "aws" {
   }
 }
 
+# Some AWS identities used for benchmarking don't have permission to tag IAM roles.
+# Use an untagged provider for IAM resources to avoid requiring iam:TagRole.
+provider "aws" {
+  alias  = "untagged"
+  region = var.aws_region
+}
+
 data "terraform_remote_state" "meta" {
   backend = "local"
 
@@ -49,7 +56,8 @@ resource "aws_cloudwatch_log_group" "task_runner" {
 }
 
 resource "aws_iam_role" "task_execution" {
-  name = "rubybencher-fargate-exec-${var.run_id}"
+  provider = aws.untagged
+  name     = "rubybencher-fargate-exec-${var.run_id}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -66,6 +74,7 @@ resource "aws_iam_role" "task_execution" {
 }
 
 resource "aws_iam_role_policy_attachment" "task_execution" {
+  provider   = aws.untagged
   role       = aws_iam_role.task_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
