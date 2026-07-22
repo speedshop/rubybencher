@@ -6,6 +6,10 @@
   },
   "aws": [
     {
+      "instance_type": "c9g.medium",
+      "alias": "c9g"
+    },
+    {
       "instance_type": "c8g.medium",
       "alias": "c8g"
     },
